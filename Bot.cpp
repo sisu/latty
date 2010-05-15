@@ -23,6 +23,7 @@ vector<BaseLocation*> areas;
 vector<vector<Unit*> > aunits;
 vector<vector<Unit*> > abuildings;
 int NA;
+bool done = false;
 
 template<int t>
 int evalBP(int x, int y){return 0;}
@@ -35,24 +36,24 @@ int evalBP<PYLON>(int x, int y)
 }
 
 template<int type>
-bool addBuild(int x)
+bool addBuilding(int x)
 {
 	BaseLocation* b = areas[x];
 	vector<Unit*>& v = abuildings[x];
 	const Poly& p = b->getRegion()->getPolygon();
 
-	int x0=1e9,x1=-1e9,y0=1e9,y1=-1e9;
+	int x0=(int)1e9,x1=(int)-1e9,y0=(int)1e9,y1=(int)-1e9;
 	for(int i=0; i<sz(p); ++i) {
 		Position a=p[i];
 		TilePosition t(a);
-		int x=t.x, y=t.y;
+		int x=t.x(), y=t.y();
 		x0 = min(x0,x);
 		x1 = max(x1,x);
 		y0 = min(y0,y);
 		y1 = max(y1,y);
 	}
 	TilePosition best;
-	int bv=-1e9;
+	int bv=(int)-1e9;
 	UnitType ut(type);
 	for(int y=y0; y<=y1; ++y) {
 		for(int x=x0; x<=x1; ++x) {
@@ -160,4 +161,14 @@ void Bot::onFrame()
 	updateMineralList();
 
 	taskifyProbes();
+	
+	TilePosition btp = getStartLocation(Broodwar->self())->getTilePosition();
+	btp.x() -= 5, btp.y() -= 5;
+	//TilePosition ntp = TilePosition(btp.x()-5,btp.y()-5);
+
+	if(Broodwar->self()->minerals() >= 100 && !done) {
+//		units[rand() % sz(units)]->build(btp,Protoss_Pylon);
+		addBuilding<PYLON>(0);
+		done = true;
+	}
 }
