@@ -28,7 +28,7 @@ bool done = false;
 template<int t>
 int evalBP(int x, int y){return 0;}
 
-const int PYLON = 0;
+const int PYLON = 156;
 template<>
 int evalBP<PYLON>(int x, int y)
 {
@@ -38,8 +38,9 @@ int evalBP<PYLON>(int x, int y)
 template<int type>
 bool addBuilding(int x)
 {
+	UnitType ut(type);
+	Broodwar->printf("Building to %d; %s",x,ut.getName().c_str());
 	BaseLocation* b = areas[x];
-	vector<Unit*>& v = abuildings[x];
 	const Poly& p = b->getRegion()->getPolygon();
 
 	int x0=(int)1e9,x1=(int)-1e9,y0=(int)1e9,y1=(int)-1e9;
@@ -54,37 +55,48 @@ bool addBuilding(int x)
 	}
 	TilePosition best;
 	int bv=(int)-1e9;
-	UnitType ut(type);
 	for(int y=y0; y<=y1; ++y) {
 		for(int x=x0; x<=x1; ++x) {
 			TilePosition t(x,y);
-			if (Broodwar->canBuildHere(0, t, ut)) {
+			if (Broodwar->isExplored(t) && Broodwar->canBuildHere(0, t, ut)) {
 				int v = evalBP<type>(t.x(),t.y());
 				if (v>bv) bv=v, best=t;
 			}
 		}
 	}
+#if 0
+	TilePosition btp = getStartLocation(Broodwar->self())->getTilePosition();
+	btp.x() -= 5, btp.y() -= 5;
+	best = btp;
+#endif
 	Position pos(best);
+	Broodwar->printf("build place %d %d\n", pos.x(), pos.y());
 	Unit* bd=0;
 	for(int i=0; i<sz(probes); ++i) {
 		Unit* u=probes[i];
 		if (!bd || u->getDistance(pos) < bd->getDistance(pos)) bd=u;
 	}
 	if (bd) {
-		bd->build(best, ut);
+//		Broodwar->printf("ordering builder %d %d ; %d", bd->getPosition().x(), bd->getPosition().y(), bd->getType());
+//		bd->build(best, ut);
+		bool ok = bd->build(best, Protoss_Pylon);
+		if (!ok) Broodwar->printf("BUILDING FAILED");
 		return 1;
 	}
+	Broodwar->printf("failed building");
 	return 0;
 }
 
 void Bot::onStart()
 {
+	Broodwar->setLocalSpeed(30);
 	readMap();
 	analyze();
 
 	const set<BaseLocation*>& bs = getBaseLocations();
 	areas.insert(areas.end(), bs.begin(), bs.end());
 	aunits.resize(bs.size());
+	Broodwar->printf("area count: %d", bs.size());
 	NA=bs.size();
 }
 
@@ -116,7 +128,7 @@ void updateProbeList() {
 	probes.clear();
 	for(UVI it = units.begin(); it != units.end(); ++it) {
 		Unit* u = *it;
-		probes.push_back(u);
+		if (u->getType()==Protoss_Probe) probes.push_back(u);
 	}
 }
 
@@ -166,9 +178,13 @@ void Bot::onFrame()
 	btp.x() -= 5, btp.y() -= 5;
 	//TilePosition ntp = TilePosition(btp.x()-5,btp.y()-5);
 
-	if(Broodwar->self()->minerals() >= 100 && !done) {
+	if(Broodwar->self()->minerals() >= 100) {
+		if (!done) {
 //		units[rand() % sz(units)]->build(btp,Protoss_Pylon);
-		addBuilding<PYLON>(0);
-		done = true;
-	}
+			int ar=0;
+			BaseLocation* start = getStartLocation(Broodwar->self());
+			while(areas[ar]!=start) ++ar;
+			done = addBuilding<PYLON>(ar);
+		}
+	} else done=0;
 }
