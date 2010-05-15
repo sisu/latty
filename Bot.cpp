@@ -1,4 +1,5 @@
 #include "Bot.hpp"
+#include "Vec.h"
 #include <set>
 #include <vector>
 using namespace std;
@@ -20,27 +21,45 @@ UVec units;
 UVec minerals;
 
 vector<BaseLocation*> areas;
-vector<vector<Unit*> > aunits;
-vector<vector<Unit*> > abuildings;
+vector<UVec> aunits;
+vector<UVec> abuildings;
+vector<UVec> aminerals;
+vector<Unit*> nexuses;
 int NA;
 bool done = false;
+int startArea;
 
 template<int t>
-int evalBP(int x, int y){return 0;}
+int evalBP(int a, TilePosition t){return 0;}
+
+bool forbidden[512][512];
+
+bool okPlace(int a, TilePosition t)
+{
+	return !forbidden[t.y()][t.x()];
+}
 
 const int PYLON = 156;
 template<>
-int evalBP<PYLON>(int x, int y)
+int evalBP<PYLON>(int a, TilePosition t)
 {
-	return rand();
+	Unit* nex = nexuses[a];
+	if (nex) {
+		int d = (int)nex->getDistance(t);
+		double r = -5*abs(d-5);
+		Chokepoint* c = *areas[a]->getRegion()->getChokepoints().begin();
+		r -= c->getCenter().getDistance(t);
+		return (int)r;
+	}
+	return 0;
 }
 
 template<int type>
-bool addBuilding(int x)
+bool addBuilding(int z)
 {
 	UnitType ut(type);
-	Broodwar->printf("Building to %d; %s",x,ut.getName().c_str());
-	BaseLocation* b = areas[x];
+	Broodwar->printf("Building to %d: %s",z,ut.getName().c_str());
+	BaseLocation* b = areas[z];
 	const Poly& p = b->getRegion()->getPolygon();
 
 	int x0=(int)1e9,x1=(int)-1e9,y0=(int)1e9,y1=(int)-1e9;
@@ -58,8 +77,8 @@ bool addBuilding(int x)
 	for(int y=y0; y<=y1; ++y) {
 		for(int x=x0; x<=x1; ++x) {
 			TilePosition t(x,y);
-			if (Broodwar->isExplored(t) && Broodwar->canBuildHere(0, t, ut)) {
-				int v = evalBP<type>(t.x(),t.y());
+			if (Broodwar->isExplored(t) && Broodwar->canBuildHere(0, t, ut) && okPlace(z,t)) {
+				int v = evalBP<type>(z,t);
 				if (v>bv) bv=v, best=t;
 			}
 		}
@@ -87,6 +106,28 @@ bool addBuilding(int x)
 	return 0;
 }
 
+void addNexus(int a, Unit* u)
+{
+	TilePosition t = u->getTilePosition();
+	for(int i=0; i<sz(aminerals[a]); ++i) {
+		Unit* m=aminerals[a][i];
+		TilePosition e = m->getTilePosition();
+		double x=t.x(), y=t.y();
+		double ex=e.x(), ey=e.y();
+		const int n=50;
+		double dx=(ex-x)/n, dy=(ey-y)/n;
+		for(int i=0; i<20; ++i) {
+			int ix=int(x), iy=int(y);
+			const int d=5;
+			Broodwar->printf("banning around %d %d", ix,iy);
+			for(int i=-d; i<=d; ++i) for(int j=-d; j<=d; ++j)
+				forbidden[iy+i][ix+j]=1;
+			x+=dx, y+=dy;
+		}
+	}
+}
+
+void updateMineralList();
 void Bot::onStart()
 {
 	Broodwar->setLocalSpeed(30);
@@ -94,10 +135,21 @@ void Bot::onStart()
 	analyze();
 
 	const set<BaseLocation*>& bs = getBaseLocations();
-	areas.insert(areas.end(), bs.begin(), bs.end());
-	aunits.resize(bs.size());
-	Broodwar->printf("area count: %d", bs.size());
 	NA=bs.size();
+	Broodwar->printf("area count: %d", NA);
+	areas.insert(areas.end(), bs.begin(), bs.end());
+	aunits.resize(NA);
+	nexuses.resize(NA);
+	aminerals.resize(NA);
+
+	BaseLocation* start = getStartLocation(Broodwar->self());
+	while(areas[startArea]!=start) ++startArea;
+	updateMineralList();
+	const USet& uns = Broodwar->self()->getUnits();
+	for(USCI it=uns.begin(); it!=uns.end(); ++it) {
+		Unit* u=*it;
+		if (u->getType()==UnitTypes::Protoss_Nexus) addNexus(startArea,u);
+	}
 }
 
 void updateUnitList() {
@@ -108,7 +160,7 @@ void updateUnitList() {
 		units.push_back(u);
 	}
 
-	for(int i=0; i<NA; ++i) aunits[i].clear();
+	for(int i=0; i<NA; ++i) aunits[i].clear(), nexuses[i]=0;
 	for(int i=0; i<sz(units); ++i) {
 		Unit* u = units[i];
 		int j;
@@ -121,6 +173,8 @@ void updateUnitList() {
 			continue;
 		}
 		aunits[j].push_back(u);
+		if (u->getType()==UnitTypes::Protoss_Nexus)
+			nexuses[j]=u;
 	}
 }
 
@@ -139,6 +193,13 @@ void updateMineralList() {
 		Unit* u = *it;
 		if(u->getType() == Resource_Mineral_Field) {
 			minerals.push_back(u);
+
+			int a;
+			for(a=0; a<sz(areas); ++a) {
+				const Poly& p = areas[a]->getRegion()->getPolygon();
+				if (p.isInside(u->getPosition())) break;
+			}
+			if (a<sz(areas)) aminerals[a].push_back(u);
 		}
 	}
 }
@@ -181,10 +242,7 @@ void Bot::onFrame()
 	if(Broodwar->self()->minerals() >= 100) {
 		if (!done) {
 //		units[rand() % sz(units)]->build(btp,Protoss_Pylon);
-			int ar=0;
-			BaseLocation* start = getStartLocation(Broodwar->self());
-			while(areas[ar]!=start) ++ar;
-			done = addBuilding<PYLON>(ar);
+			done = addBuilding<PYLON>(startArea);
 		}
 	} else done=0;
 }
