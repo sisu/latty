@@ -18,11 +18,16 @@ UVec units;
 
 vector<BaseLocation*> areas;
 vector<vector<Unit*> > aunits;
+int NA;
 
-void addPyon(int x)
+void addPylon(int x)
 {
 	BaseLocation* b = areas[x];
 	vector<Unit*>& v = aunits[x];
+
+	for(int i=0; i<sz(v); ++i) {
+		Unit* u = v[i];
+	}
 }
 
 void Bot::onStart()
@@ -32,6 +37,8 @@ void Bot::onStart()
 
 	const set<BaseLocation*>& bs = getBaseLocations();
 	areas.insert(areas.end(), bs.begin(), bs.end());
+	aunits.resize(bs.size());
+	NA=bs.size();
 }
 
 void updateUnitList() {
@@ -40,6 +47,21 @@ void updateUnitList() {
 	for(UVI it = units.begin(); it != units.end(); ++it) {
 		Unit* u = *it;
 		units.push_back(u);
+	}
+
+	for(int i=0; i<NA; ++i) aunits[i].clear();
+	for(int i=0; i<sz(units); ++i) {
+		Unit* u = units[i];
+		int j;
+		for(j=0; j<NA; ++j) {
+			const BWTA::Polygon& p = areas[j]->getRegion()->getPolygon();
+			if (p.isInside(u->getPosition())) break;
+		}
+		if (j==NA) {
+			Broodwar->printf("unit outside all areas...");
+			continue;
+		}
+		aunits[j].push_back(u);
 	}
 }
 
