@@ -29,9 +29,6 @@ int NA;
 bool done = false;
 int startArea;
 
-template<int t>
-int evalBP(int a, TilePosition t){return 0;}
-
 bool forbidden[512][512];
 
 bool okPlace(int a, TilePosition t)
@@ -39,19 +36,33 @@ bool okPlace(int a, TilePosition t)
 	return !forbidden[t.y()][t.x()];
 }
 
-const int PYLON = 156;
-template<>
-int evalBP<PYLON>(int a, TilePosition t)
+const int PYLON = 156, GATEWAY=160, NEXUS=154;
+
+template<int t>
+int evalBP(int a, TilePosition t){return 0;}
+
+int evalBB(int a, TilePosition t, int fd, int fn, int fc)
 {
 	Unit* nex = nexuses[a];
 	if (nex) {
 		int d = (int)nex->getDistance(t);
-		double r = -5*abs(d-5);
+		double r = fn*abs(d-fd);
 		Chokepoint* c = *areas[a]->getRegion()->getChokepoints().begin();
-		r -= c->getCenter().getDistance(t);
+		r += fc*c->getCenter().getDistance(t);
 		return (int)r;
 	}
 	return 0;
+}
+
+template<>
+int evalBP<PYLON>(int a, TilePosition t)
+{
+	return evalBB(a,t,5,-5,-1);
+}
+template<>
+int evalBP<GATEWAY>(int a, TilePosition t)
+{
+	return evalBB(a,t,0,-4,-2);
 }
 
 template<int type>
@@ -83,11 +94,6 @@ bool addBuilding(int z)
 			}
 		}
 	}
-#if 0
-	TilePosition btp = getStartLocation(Broodwar->self())->getTilePosition();
-	btp.x() -= 5, btp.y() -= 5;
-	best = btp;
-#endif
 	Position pos(best);
 	Broodwar->printf("build place %d %d\n", pos.x(), pos.y());
 	Unit* bd=0;
