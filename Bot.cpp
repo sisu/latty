@@ -13,6 +13,7 @@ typedef USet::iterator USI;
 typedef USet::const_iterator USCI;
 typedef vector<Unit*> UVec;
 typedef UVec::iterator UVI;
+typedef BWTA::Polygon Poly;
 
 UVec probes;
 UVec units;
@@ -20,16 +21,59 @@ UVec minerals;
 
 vector<BaseLocation*> areas;
 vector<vector<Unit*> > aunits;
+vector<vector<Unit*> > abuildings;
 int NA;
 
-void addPylon(int x)
+template<int t>
+int evalBP(int x, int y){return 0;}
+
+const int PYLON = 0;
+template<>
+int evalBP<PYLON>(int x, int y)
+{
+	return rand();
+}
+
+template<int type>
+bool addBuild(int x)
 {
 	BaseLocation* b = areas[x];
-	vector<Unit*>& v = aunits[x];
+	vector<Unit*>& v = abuildings[x];
+	const Poly& p = b->getRegion()->getPolygon();
 
-	for(int i=0; i<sz(v); ++i) {
-		Unit* u = v[i];
+	int x0=1e9,x1=-1e9,y0=1e9,y1=-1e9;
+	for(int i=0; i<sz(p); ++i) {
+		Position a=p[i];
+		TilePosition t(a);
+		int x=t.x, y=t.y;
+		x0 = min(x0,x);
+		x1 = max(x1,x);
+		y0 = min(y0,y);
+		y1 = max(y1,y);
 	}
+	TilePosition best;
+	int bv=-1e9;
+	UnitType ut(type);
+	for(int y=y0; y<=y1; ++y) {
+		for(int x=x0; x<=x1; ++x) {
+			TilePosition t(x,y);
+			if (Broodwar->canBuildHere(0, t, ut)) {
+				int v = evalBP<type>(t.x(),t.y());
+				if (v>bv) bv=v, best=t;
+			}
+		}
+	}
+	Position pos(best);
+	Unit* bd=0;
+	for(int i=0; i<sz(probes); ++i) {
+		Unit* u=probes[i];
+		if (!bd || u->getDistance(pos) < bd->getDistance(pos)) bd=u;
+	}
+	if (bd) {
+		bd->build(best, ut);
+		return 1;
+	}
+	return 0;
 }
 
 void Bot::onStart()
