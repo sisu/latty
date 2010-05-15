@@ -21,6 +21,8 @@ UVec minerals;
 vector<BaseLocation*> areas;
 vector<vector<Unit*> > aunits;
 
+bool done = false;
+
 void addPylon(int x)
 {
 	BaseLocation* b = areas[x];
@@ -94,4 +96,13 @@ void Bot::onFrame()
 	updateMineralList();
 
 	taskifyProbes();
+	
+	TilePosition btp = getStartLocation(Broodwar->self())->getTilePosition();
+	btp.x() -= 5, btp.y() -= 5;
+	//TilePosition ntp = TilePosition(btp.x()-5,btp.y()-5);
+
+	if(Broodwar->self()->minerals() >= 100 && !done) {
+		units[rand() % sz(units)]->build(btp,Protoss_Pylon);
+		done = true;
+	}
 }
