@@ -6,7 +6,6 @@
 
 #include <BWAPI.h>
 
-//#include "ExampleAIModule.h"
 #include "Bot.hpp"
 namespace BWAPI { Game* Broodwar; }
 BOOL APIENTRY DllMain( HANDLE hModule, 
