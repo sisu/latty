@@ -3,6 +3,7 @@
 #include <set>
 #include <vector>
 #include <map>
+#include <cstring>
 using namespace std;
 using namespace BWAPI;
 using namespace BWTA;
@@ -34,6 +35,8 @@ int startArea;
 
 int myMnr; // non-allocated minerals
 map<Unit*,pair<int,UnitType> > startingBuild;
+int comingCnt[256];
+int comingSupply;
 
 bool forbidden[512][512];
 
@@ -106,6 +109,8 @@ bool makeBuilding(int z)
 	Unit* bd=0;
 	for(int i=0; i<sz(probes); ++i) {
 		Unit* u=probes[i];
+		if (startingBuild.count(u)) continue;
+		if (u->isConstructing()) continue;
 		if (!bd || u->getDistance(pos) < bd->getDistance(pos)) bd=u;
 	}
 	if (bd) {
@@ -125,12 +130,14 @@ bool makeProbe()
 	int bs=0;
 	for(int i=0; i<sz(nexuses); ++i) {
 		Unit* u=nexuses[i];
-		if (!u || !u->exists()) continue;
+		if (!u || !u->exists() || !u->isCompleted()) continue;
 		if (u->isTraining()) continue;
 		best=u;
 	}
 	if (best) {
-		return best->train(Protoss_Probe);
+		bool ok = best->train(Protoss_Probe);
+		if (ok) myMnr -= 50;
+		return ok;
 	}
 	return 0;
 }
@@ -159,7 +166,7 @@ void addNexus(int a, Unit* u)
 void updateMineralList();
 void Bot::onStart()
 {
-	Broodwar->setLocalSpeed(40);
+	Broodwar->setLocalSpeed(35);
 	readMap();
 	analyze();
 
@@ -201,6 +208,7 @@ void updateUnitList() {
 	}
 
 	for(int i=0; i<NA; ++i) aunits[i].clear(), nexuses[i]=0;
+	memset(comingCnt,0,sizeof(comingCnt));
 	for(int i=0; i<sz(units); ++i) {
 		Unit* u = units[i];
 		int j;
@@ -215,25 +223,30 @@ void updateUnitList() {
 		aunits[j].push_back(u);
 		if (u->getType()==UnitTypes::Protoss_Nexus)
 			nexuses[j]=u;
+
+		++comingCnt[u->getType().getID()];
 	}
 
 	myMnr=Broodwar->self()->minerals();
 	for(int i=0; i<sz(units); ++i) {
 		Unit* u = units[i];
 		if (u->getType()!=Protoss_Probe) continue;
-		if (startingBuild.count(u)) {
+		if (u->isConstructing() && u->getBuildType()!=None) {
+			myMnr -= u->getBuildType().mineralPrice();
+			++comingCnt[u->getBuildType().getID()];
+		} else if (startingBuild.count(u)) {
 			myMnr -= startingBuild[u].second.mineralPrice();
-//			Broodwar->printf("YEEAAAAH %d", startingBuild[u].second.mineralPrice());
+			++comingCnt[startingBuild[u].second.getID()];
 		}
-		else if (u->isConstructing()) 
-			myMnr -= u->getBuildType().mineralPrice();//, Broodwar->printf("reducing %d: %d", u->getBuildType().mineralPrice(), myMnr);
 	}
 	for(map<Unit*,pair<int,UnitType> >::iterator i=startingBuild.begin(); i!=startingBuild.end(); ) {
 		int& x = i->second.first;
-		if (x>5) {
+		Unit* u = i->first;
+		if (x>10 || (u->isConstructing() && u->getBuildType()!=None)) {
 			i = startingBuild.erase(i);
 		} else ++x, ++i;
 	}
+	comingSupply = 9 + 8*comingCnt[Protoss_Pylon.getID()];
 }
 
 void updateProbeList() {
@@ -284,7 +297,6 @@ void taskifyProbes() {
 		}
 	}
 }
-bool zzz=0;
 void Bot::onFrame()
 {
 	updateUnitList();
@@ -298,11 +310,21 @@ void Bot::onFrame()
 	btp.x() -= 5, btp.y() -= 5;
 	//TilePosition ntp = TilePosition(btp.x()-5,btp.y()-5);
 
-	if (zzz) Broodwar->printf("asdsad %d ; %d", myMnr, startingBuild.size()),zzz=0;
+#if 0
 	if(myMnr >= 100) {
-		units[rand() % sz(units)]->build(btp,Protoss_Pylon);
+//		units[rand() % sz(units)]->build(btp,Protoss_Pylon);
 		bool ok = makeBuilding<PYLON>(startArea);
 		Broodwar->printf("build: %d", ok);
-		zzz=1;
+	}
+#endif
+	int useds = Broodwar->self()->supplyUsed()/2;
+	if (useds < comingSupply-1) {
+		if (myMnr >= 50) {
+			makeProbe();
+		}
+	}
+	if (useds>=comingSupply-2 && myMnr >= 100) {
+		Broodwar->printf("need build; %d %d %d", comingSupply, comingCnt[PYLON], startingBuild.size());
+		makeBuilding<PYLON>(startArea);
 	}
 }
