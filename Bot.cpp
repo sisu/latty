@@ -47,6 +47,7 @@ int evalBB(int a, TilePosition t, int fd, int fn, int fc)
 	if (nex) {
 		int d = (int)nex->getDistance(t);
 		double r = fn*abs(d-fd);
+		// FIXME
 		Chokepoint* c = *areas[a]->getRegion()->getChokepoints().begin();
 		r += fc*c->getCenter().getDistance(t);
 		return (int)r;
