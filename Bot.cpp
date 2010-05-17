@@ -4,6 +4,7 @@
 #include <vector>
 #include <map>
 #include <cstring>
+#include <algorithm>
 using namespace std;
 using namespace BWAPI;
 using namespace BWTA;
@@ -45,7 +46,8 @@ bool okPlace(int a, TilePosition t)
 	return !forbidden[t.y()][t.x()];
 }
 
-const int PYLON = 156, GATEWAY=160, NEXUS=154;
+const int PYLON=156, GATEWAY=160, NEXUS=154, CYBER=164;
+const int PROBE=64, ZEALOT=65, DRAGOON=66;
 
 template<int t>
 int evalBP(int a, TilePosition t){return 0;}
@@ -67,7 +69,7 @@ int evalBB(int a, TilePosition t, int fd, int fn, int fc)
 template<>
 int evalBP<PYLON>(int a, TilePosition t)
 {
-	return evalBB(a,t,2,-5,-1);
+	return evalBB(a,t,2,-10,-1);
 }
 template<>
 int evalBP<GATEWAY>(int a, TilePosition t)
@@ -79,6 +81,7 @@ template<int type>
 bool makeBuilding(int z)
 {
 	UnitType ut(type);
+	if (ut.mineralPrice() > myMnr) return 0;
 //	Broodwar->printf("Building to %d: %s",z,ut.getName().c_str());
 	Region* r = areas[z];
 	const Poly& p = r->getPolygon();
@@ -116,7 +119,7 @@ bool makeBuilding(int z)
 	if (bd) {
 //		Broodwar->printf("ordering builder %d %d ; %d", bd->getPosition().x(), bd->getPosition().y(), bd->getType());
 //		bd->build(best, ut);
-		bool ok = bd->build(best, Protoss_Pylon);
+		bool ok = bd->build(best, ut);
 		if (!ok) Broodwar->printf("BUILDING FAILED");
 		else myMnr -= ut.mineralPrice(), startingBuild[bd]=make_pair(0,ut);
 		return ok;
@@ -124,19 +127,50 @@ bool makeBuilding(int z)
 	Broodwar->printf("failed building");
 	return 0;
 }
+template<int T>
+bool makeBuilding()
+{
+	//FIXME
+	return makeBuilding<T>(startArea);
+}
 bool makeProbe()
 {
+	if (myMnr<50) return 0;
 	Unit* best=0;
-	int bs=0;
+	int bv=-99999;
 	for(int i=0; i<sz(nexuses); ++i) {
 		Unit* u=nexuses[i];
 		if (!u || !u->exists() || !u->isCompleted()) continue;
 		if (u->isTraining()) continue;
-		best=u;
+		// FIXME
+		int v=0;
+		if (v>bv) bv=v, best=u;
 	}
 	if (best) {
 		bool ok = best->train(Protoss_Probe);
 		if (ok) myMnr -= 50;
+		return ok;
+	}
+	return 0;
+}
+bool makeUnit(UnitType t)
+{
+	if (t.mineralPrice()>myMnr) return 0;
+	Unit* best=0;
+	int bv=-99999;
+	for(int i=0; i<sz(units); ++i) {
+		Unit* u=units[i];
+		if (u->getType() != Protoss_Gateway) continue;
+		if (!u || !u->exists() || !u->isCompleted()) continue;
+		if (u->isTraining()) continue;
+		// FIXME
+		int v=0;
+		if (v>bv) bv=v, best=u;
+	}
+	if (best) {
+		bool ok = best->train(t);
+		if (ok) myMnr -= t.mineralPrice();
+		Broodwar->printf("MAKING UNIT %s: %d", t.getName().c_str(), ok);
 		return ok;
 	}
 	return 0;
@@ -164,41 +198,6 @@ void addNexus(int a, Unit* u)
 }
 
 void updateMineralList();
-void Bot::onStart()
-{
-	Broodwar->setLocalSpeed(35);
-	readMap();
-	analyze();
-
-	const set<BaseLocation*>& bs = getBaseLocations();
-	const set<Region*>& rs = getRegions();
-	NA=rs.size();
-	NB=bs.size();
-	Broodwar->printf("area count: %d %d", NA, NB);
-//	areas.insert(areas.end(), rs.begin(), rs.end());
-	bases.insert(bases.end(), bs.begin(), bs.end());
-	areas.resize(NB);
-	for(set<Region*>::const_iterator i=rs.begin(); i!=rs.end(); ++i) {
-		Region* r = *i;
-		int j;
-		for(j=0; j<NB && bases[j]->getRegion()!=r; ++j);
-		if (j<NB) areas[j]=r;
-		else areas.push_back(r);
-	}
-	aunits.resize(NA);
-	nexuses.resize(NA);
-	aminerals.resize(NA);
-
-	BaseLocation* start = getStartLocation(Broodwar->self());
-	while(bases[startArea]!=start) ++startArea;
-	updateMineralList();
-	const USet& uns = Broodwar->self()->getUnits();
-	for(USCI it=uns.begin(); it!=uns.end(); ++it) {
-		Unit* u=*it;
-		if (u->getType()==UnitTypes::Protoss_Nexus) addNexus(startArea,u);
-	}
-}
-
 void updateUnitList() {
 	units.clear();
 	const USet& uns = Broodwar->self()->getUnits();
@@ -297,6 +296,63 @@ void taskifyProbes() {
 		}
 	}
 }
+
+struct Action {
+	double value;
+	virtual void exec() = 0;
+};
+bool cmpA(const Action* a, const Action* b)
+{
+	return a->value > b->value;
+}
+struct MkProbeA: Action {
+	MkProbeA() {
+		value=30./(5.+2.*comingCnt[PROBE]);
+	}
+	void exec() {
+		makeProbe();
+	}
+};
+struct MkPylonA: Action {
+	MkPylonA() {
+		int useds = Broodwar->self()->supplyUsed()/2;
+		value=20./(2+1*(comingSupply - useds));
+		if (useds>=comingSupply-2) value += 40;
+		else if (comingSupply>=useds+20) value = -1;
+	}
+	void exec() {
+		makeBuilding<PYLON>();
+	}
+};
+struct MkGatewayA: Action {
+	MkGatewayA() {
+		int c = comingCnt[GATEWAY];
+		value = 20./(4+10*c);
+	}
+	void exec() {
+		makeBuilding<GATEWAY>();
+	}
+};
+struct MkFighterA: Action {
+	MkFighterA() {
+		int a=comingCnt[ZEALOT], b=comingCnt[DRAGOON];
+		value=20./(5+2*(a+b));
+	}
+	void exec() {
+		int a=comingCnt[ZEALOT], b=comingCnt[DRAGOON];
+		if (3*a <= 2*b || Broodwar->self()->gas()<50 || !canMakeDragoon()) makeUnit(Protoss_Zealot);
+		else makeUnit(Protoss_Dragoon);
+	}
+	static bool canMakeDragoon() {
+		for(int i=0; i<sz(units); ++i) {
+			Unit* u=units[i];
+			if (u->getType()!=Protoss_Cybernetics_Core) continue;
+			if (u->exists() && !u->isBeingConstructed()) return 1;
+		}
+		return 0;
+	}
+};
+
 void Bot::onFrame()
 {
 	updateUnitList();
@@ -311,12 +367,6 @@ void Bot::onFrame()
 	//TilePosition ntp = TilePosition(btp.x()-5,btp.y()-5);
 
 #if 0
-	if(myMnr >= 100) {
-//		units[rand() % sz(units)]->build(btp,Protoss_Pylon);
-		bool ok = makeBuilding<PYLON>(startArea);
-		Broodwar->printf("build: %d", ok);
-	}
-#endif
 	int useds = Broodwar->self()->supplyUsed()/2;
 	if (useds < comingSupply-1) {
 		if (myMnr >= 50) {
@@ -326,5 +376,54 @@ void Bot::onFrame()
 	if (useds>=comingSupply-2 && myMnr >= 100) {
 		Broodwar->printf("need build; %d %d %d", comingSupply, comingCnt[PYLON], startingBuild.size());
 		makeBuilding<PYLON>(startArea);
+	}
+#else
+	vector<Action*> as;
+	as.push_back(new MkPylonA());
+	as.push_back(new MkProbeA());
+	as.push_back(new MkGatewayA());
+	as.push_back(new MkFighterA());
+
+	sort(as.begin(),as.end(),cmpA);
+//	as[0]->exec();
+	for(int i=0; i<sz(as); ++i)
+		if (as[i]->value>=0) as[i]->exec();
+
+	for(int i=0; i<sz(as); ++i) delete as[i];
+#endif
+}
+
+void Bot::onStart()
+{
+	Broodwar->setLocalSpeed(30);
+	readMap();
+	analyze();
+
+	const set<BaseLocation*>& bs = getBaseLocations();
+	const set<Region*>& rs = getRegions();
+	NA=rs.size();
+	NB=bs.size();
+	Broodwar->printf("area count: %d %d", NA, NB);
+//	areas.insert(areas.end(), rs.begin(), rs.end());
+	bases.insert(bases.end(), bs.begin(), bs.end());
+	areas.resize(NB);
+	for(set<Region*>::const_iterator i=rs.begin(); i!=rs.end(); ++i) {
+		Region* r = *i;
+		int j;
+		for(j=0; j<NB && bases[j]->getRegion()!=r; ++j);
+		if (j<NB) areas[j]=r;
+		else areas.push_back(r);
+	}
+	aunits.resize(NA);
+	nexuses.resize(NA);
+	aminerals.resize(NA);
+
+	BaseLocation* start = getStartLocation(Broodwar->self());
+	while(bases[startArea]!=start) ++startArea;
+	updateMineralList();
+	const USet& uns = Broodwar->self()->getUnits();
+	for(USCI it=uns.begin(); it!=uns.end(); ++it) {
+		Unit* u=*it;
+		if (u->getType()==UnitTypes::Protoss_Nexus) addNexus(startArea,u);
 	}
 }
