@@ -47,7 +47,7 @@ bool okPlace(int a, TilePosition t)
 	return !forbidden[t.y()][t.x()];
 }
 
-const int PYLON=156, GATEWAY=160, NEXUS=154, CYBER=164;
+const int PYLON=156, GATEWAY=160, NEXUS=154, CYBER=164, FORGE=166;
 const int PROBE=64, ZEALOT=65, DRAGOON=66;
 
 template<int t>
@@ -76,6 +76,16 @@ template<>
 int evalBP<GATEWAY>(int a, TilePosition t)
 {
 	return evalBB(a,t,0,-4,-2);
+}
+template<>
+int evalBP<FORGE>(int a, TilePosition t)
+{
+	return evalBB(a,t,0,-50,-1);
+}
+template<>
+int evalBP<CYBER>(int a, TilePosition t)
+{
+	return evalBB(a,t,0,-5,-1);
 }
 
 template<int type>
@@ -128,14 +138,30 @@ bool makeBuilding(int z)
 	Broodwar->printf("failed building");
 	return 0;
 }
+#if 0
 template<int T>
 bool makeBuilding()
 {
 	//FIXME
 	return makeBuilding<T>(startArea);
 }
-bool makeProbe()
+#endif
+double bestPrior;
+bool checkPrior(double prior)
 {
+	if (bestPrior<0) bestPrior=prior;
+	return 1;
+	return bestPrior-prior<1;
+}
+template<int T>
+bool makeBuilding(double prior)
+{
+	if (!checkPrior(prior)) return 0;
+	return makeBuilding<T>(startArea);
+}
+bool makeProbe(double value)
+{
+	if (!checkPrior(value)) return 0;
 	if (myMnr<50) return 0;
 	Unit* best=0;
 	int bv=-99999;
@@ -154,8 +180,9 @@ bool makeProbe()
 	}
 	return 0;
 }
-bool makeUnit(UnitType t)
+bool makeUnit(UnitType t, double val)
 {
+	if (!checkPrior(val)) return 0;
 	if (t.mineralPrice()>myMnr) return 0;
 	Unit* best=0;
 	int bv=-99999;
@@ -312,7 +339,7 @@ struct MkProbeA: Action {
 		value=30./(5.+2.*comingCnt[PROBE]);
 	}
 	void exec() {
-		makeProbe();
+		makeProbe(value);
 	}
 };
 struct MkPylonA: Action {
@@ -321,9 +348,10 @@ struct MkPylonA: Action {
 		value=20./(2+1*(comingSupply - useds));
 		if (useds>=comingSupply-2) value += 40;
 		else if (comingSupply>=useds+20) value = -1;
+		if (comingSupply>=200) value=-1;
 	}
 	void exec() {
-		makeBuilding<PYLON>();
+		makeBuilding<PYLON>(value);
 	}
 };
 struct MkGatewayA: Action {
@@ -332,7 +360,7 @@ struct MkGatewayA: Action {
 		value = 20./(4+10*c);
 	}
 	void exec() {
-		makeBuilding<GATEWAY>();
+		makeBuilding<GATEWAY>(value);
 	}
 };
 struct MkFighterA: Action {
@@ -342,8 +370,8 @@ struct MkFighterA: Action {
 	}
 	void exec() {
 		int a=comingCnt[ZEALOT], b=comingCnt[DRAGOON];
-		if (3*a <= 2*b || Broodwar->self()->gas()<50 || !canMakeDragoon()) makeUnit(Protoss_Zealot);
-		else makeUnit(Protoss_Dragoon);
+		if (3*a <= 2*b || Broodwar->self()->gas()<50 || !canMakeDragoon()) makeUnit(Protoss_Zealot,value);
+		else makeUnit(Protoss_Dragoon,value);
 	}
 	static bool canMakeDragoon() {
 		for(int i=0; i<sz(units); ++i) {
@@ -383,6 +411,24 @@ struct AttackA: Action {
 		}
 	}
 };
+struct MkForgeA: Action {
+	MkForgeA() {
+		value=2;
+		if (comingCnt[FORGE]) value=-1;
+	}
+	void exec() {
+		makeBuilding<FORGE>(value);
+	}
+};
+struct MkCyberA: Action {
+	MkCyberA() {
+		value=2;
+		if (comingCnt[CYBER] || curCnt[FORGE]) value=-1;
+	}
+	void exec() {
+		makeBuilding<CYBER>(value);
+	}
+};
 
 void Bot::onFrame()
 {
@@ -409,6 +455,7 @@ void Bot::onFrame()
 		makeBuilding<PYLON>(startArea);
 	}
 #else
+	bestPrior=-1;
 	vector<Action*> as;
 	as.push_back(new MkPylonA());
 	as.push_back(new MkProbeA());
@@ -416,6 +463,8 @@ void Bot::onFrame()
 	as.push_back(new MkFighterA());
 	as.push_back(new ExploreA());
 	as.push_back(new AttackA());
+	as.push_back(new MkForgeA());
+	as.push_back(new MkCyberA());
 
 	sort(as.begin(),as.end(),cmpA);
 //	as[0]->exec();
