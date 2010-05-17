@@ -38,6 +38,7 @@ int myMnr; // non-allocated minerals
 map<Unit*,pair<int,UnitType> > startingBuild;
 int comingCnt[256];
 int comingSupply;
+int curCnt[256];
 
 bool forbidden[512][512];
 
@@ -224,6 +225,7 @@ void updateUnitList() {
 			nexuses[j]=u;
 
 		++comingCnt[u->getType().getID()];
+		++curCnt[u->getType().getID()];
 	}
 
 	myMnr=Broodwar->self()->minerals();
@@ -352,6 +354,35 @@ struct MkFighterA: Action {
 		return 0;
 	}
 };
+struct ExploreA: Action {
+	ExploreA() {
+		value=-1;
+	}
+	void exec() {
+	}
+};
+struct AttackA: Action {
+	AttackA() {
+		int a=curCnt[DRAGOON], b=curCnt[ZEALOT];
+		if (a+b>5) value = 10*(a+b);
+		else value=-1;
+	}
+	void exec() {
+//		Broodwar->printf("STARTING ATTACK");
+		int target=15;
+//		while(target<NB && bases[target] != getStartLocation(Broodwar->enemy())) ++target;
+//		if (target==NB) Broodwar->printf("FAILED CHOOSING ATTACK TARGET");
+		Position to=areas[target]->getCenter();
+//		Broodwar->printf("Attack location: %d %d", to.x(), to.y());
+		for(int i=0; i<sz(units); ++i) {
+			Unit* u = units[i];
+			if (!u->isIdle()) continue;
+			UnitType t = u->getType();
+			if (t!=Protoss_Dragoon && t!=Protoss_Zealot) continue;
+			u->attackMove(to);
+		}
+	}
+};
 
 void Bot::onFrame()
 {
@@ -383,6 +414,8 @@ void Bot::onFrame()
 	as.push_back(new MkProbeA());
 	as.push_back(new MkGatewayA());
 	as.push_back(new MkFighterA());
+	as.push_back(new ExploreA());
+	as.push_back(new AttackA());
 
 	sort(as.begin(),as.end(),cmpA);
 //	as[0]->exec();
@@ -395,6 +428,7 @@ void Bot::onFrame()
 
 void Bot::onStart()
 {
+	Broodwar->enableFlag(Flag::UserInput);
 	Broodwar->setLocalSpeed(30);
 	readMap();
 	analyze();
