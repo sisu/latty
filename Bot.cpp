@@ -78,6 +78,9 @@ int curCnt[512];
 
 bool forbidden[512][512];
 
+int owner[256];
+map<Region*,int> regNum;
+
 bool okPlace(int a, TilePosition t)
 {
 	return !forbidden[t.y()][t.x()];
@@ -262,6 +265,35 @@ void addNexus(int a, Unit* u)
 		}
 	}
 }
+
+bool sused[256];
+typedef const set<Chokepoint*> CCPS;
+int sizeDFS(int n, Chokepoint* no)
+{
+	sused[n]=1;
+	Region* r=areas[n];
+	CCPS cps = r->getChokepoints();
+	int r=1;
+	for(CCPS::const_iterator i=cps.begin(); i!=cps.end(); ++i) {
+		Chokepoint* p=*i;
+		if (p==no) continue;
+		const pair<Region*,Region*> rs = p->getRegions();
+		Region* other = rs.first==r ? rs.second : rs.first;
+		int m = regNum[other];
+		if (sused[m]) continue;
+		r += sizeDFS(m, no);
+	}
+	return r;
+}
+
+void calcBorder()
+{
+	const CCPS cps = getChokepoints();
+	for(CCPS::const_iterator i=cps.begin(); i!=cps.end(); ++i) {
+		Chokepoint* p = *i;
+	}
+}
+
 
 void updateMineralList();
 void updateUnitList() {
@@ -609,8 +641,8 @@ void Bot::onStart()
 		Region* r = *i;
 		int j;
 		for(j=0; j<NB && bases[j]->getRegion()!=r; ++j);
-		if (j<NB) areas[j]=r;
-		else areas.push_back(r);
+		if (j<NB) areas[j]=r, regNum[r]=j;
+		else regNum[r]=areas.size(), areas.push_back(r);
 	}
 	aunits.resize(NA);
 	nexuses.resize(NA);
