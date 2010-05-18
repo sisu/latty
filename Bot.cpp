@@ -32,13 +32,13 @@ vector<Unit*> nexuses;
 int NA; // areas
 int NB; // bases
 //bool done = false;
-int startArea;
+int myStart, enemyStart;
 
 int myMnr; // non-allocated minerals
 map<Unit*,pair<int,UnitType> > startingBuild;
-int comingCnt[256];
+int comingCnt[512];
 int comingSupply;
-int curCnt[256];
+int curCnt[512];
 
 bool forbidden[512][512];
 
@@ -47,7 +47,7 @@ bool okPlace(int a, TilePosition t)
 	return !forbidden[t.y()][t.x()];
 }
 
-const int PYLON=156, GATEWAY=160, NEXUS=154, CYBER=164, FORGE=166;
+const int PYLON=156, GATEWAY=160, NEXUS=154, CYBER=164, FORGE=166, ASSIMILATOR=157;
 const int PROBE=64, ZEALOT=65, DRAGOON=66;
 
 template<int t>
@@ -86,6 +86,9 @@ template<>
 int evalBP<CYBER>(int a, TilePosition t)
 {
 	return evalBB(a,t,0,-5,-1);
+}
+template<> int evalBP<ASSIMILATOR>(int a, TilePosition t) {
+	return evalBB(a,t,0,-1,0);
 }
 
 template<int type>
@@ -131,7 +134,7 @@ bool makeBuilding(int z)
 //		Broodwar->printf("ordering builder %d %d ; %d", bd->getPosition().x(), bd->getPosition().y(), bd->getType());
 //		bd->build(best, ut);
 		bool ok = bd->build(best, ut);
-		if (!ok) Broodwar->printf("BUILDING FAILED");
+		if (!ok) Broodwar->printf("BUILDING FAILED %s", ut.getName().c_str());
 		else myMnr -= ut.mineralPrice(), startingBuild[bd]=make_pair(0,ut);
 		return ok;
 	}
@@ -143,21 +146,20 @@ template<int T>
 bool makeBuilding()
 {
 	//FIXME
-	return makeBuilding<T>(startArea);
+	return makeBuilding<T>(myStart);
 }
 #endif
 double bestPrior;
 bool checkPrior(double prior)
 {
 	if (bestPrior<0) bestPrior=prior;
-	return 1;
 	return bestPrior-prior<1;
 }
 template<int T>
 bool makeBuilding(double prior)
 {
 	if (!checkPrior(prior)) return 0;
-	return makeBuilding<T>(startArea);
+	return makeBuilding<T>(myStart);
 }
 bool makeProbe(double value)
 {
@@ -236,6 +238,7 @@ void updateUnitList() {
 
 	for(int i=0; i<NA; ++i) aunits[i].clear(), nexuses[i]=0;
 	memset(comingCnt,0,sizeof(comingCnt));
+	memset(curCnt,0,sizeof(curCnt));
 	for(int i=0; i<sz(units); ++i) {
 		Unit* u = units[i];
 		int j;
@@ -336,7 +339,7 @@ bool cmpA(const Action* a, const Action* b)
 }
 struct MkProbeA: Action {
 	MkProbeA() {
-		value=30./(5.+2.*comingCnt[PROBE]);
+		value=40./(5+2*comingCnt[PROBE]);
 	}
 	void exec() {
 		makeProbe(value);
@@ -345,9 +348,9 @@ struct MkProbeA: Action {
 struct MkPylonA: Action {
 	MkPylonA() {
 		int useds = Broodwar->self()->supplyUsed()/2;
-		value=20./(2+1*(comingSupply - useds));
+		value=20./(4+5*(comingSupply - useds));
 		if (useds>=comingSupply-2) value += 40;
-		else if (comingSupply>=useds+20) value = -1;
+		else if (comingSupply>=useds+10) value = -1;
 		if (comingSupply>=200) value=-1;
 	}
 	void exec() {
@@ -358,6 +361,7 @@ struct MkGatewayA: Action {
 	MkGatewayA() {
 		int c = comingCnt[GATEWAY];
 		value = 20./(4+10*c);
+		if (!curCnt[PYLON]) value=-1;
 	}
 	void exec() {
 		makeBuilding<GATEWAY>(value);
@@ -366,7 +370,17 @@ struct MkGatewayA: Action {
 struct MkFighterA: Action {
 	MkFighterA() {
 		int a=comingCnt[ZEALOT], b=comingCnt[DRAGOON];
-		value=20./(5+2*(a+b));
+		int t0=(int)1e9;
+		for(int i=0; i<sz(units); ++i) {
+			Unit* u = units[i];
+			if (u->getType() != Protoss_Gateway) continue;
+			if (!u->exists() || u->isBeingConstructed()) continue;
+			if (!u->isTraining()) t0=0;
+			else t0 = min(t0, u->getRemainingBuildTime());
+		}
+		double tt = (double)t0/UnitType(ZEALOT).buildTime();
+		value=20./(5+10*log(1.0+a+b)) * (1-tt);
+		if (!curCnt[GATEWAY]) value=-1;
 	}
 	void exec() {
 		int a=comingCnt[ZEALOT], b=comingCnt[DRAGOON];
@@ -394,6 +408,7 @@ struct AttackA: Action {
 		int a=curCnt[DRAGOON], b=curCnt[ZEALOT];
 		if (a+b>5) value = 10*(a+b);
 		else value=-1;
+//		Broodwar->printf("attack %f",value);
 	}
 	void exec() {
 //		Broodwar->printf("STARTING ATTACK");
@@ -415,6 +430,7 @@ struct MkForgeA: Action {
 	MkForgeA() {
 		value=2;
 		if (comingCnt[FORGE]) value=-1;
+		if (!curCnt[PYLON]) value=-1;
 	}
 	void exec() {
 		makeBuilding<FORGE>(value);
@@ -422,11 +438,21 @@ struct MkForgeA: Action {
 };
 struct MkCyberA: Action {
 	MkCyberA() {
-		value=2;
-		if (comingCnt[CYBER] || curCnt[FORGE]) value=-1;
+		value=3;
+		if (comingCnt[CYBER] || !curCnt[FORGE] || !comingCnt[ASSIMILATOR]) value=-1;
+		if (!curCnt[PYLON]) value=-1;
+//		Broodwar->printf("cyber %f ; %d %d", value, comingCnt[CYBER], curCnt[FORGE]);
 	}
 	void exec() {
 		makeBuilding<CYBER>(value);
+	}
+};
+struct MkAssimA: Action {
+	MkAssimA() {
+		value=-1;
+	}
+	void exec() {
+		makeBuilding<ASSIMILATOR>(value);
 	}
 };
 
@@ -452,7 +478,7 @@ void Bot::onFrame()
 	}
 	if (useds>=comingSupply-2 && myMnr >= 100) {
 		Broodwar->printf("need build; %d %d %d", comingSupply, comingCnt[PYLON], startingBuild.size());
-		makeBuilding<PYLON>(startArea);
+		makeBuilding<PYLON>(myStart);
 	}
 #else
 	bestPrior=-1;
@@ -502,11 +528,11 @@ void Bot::onStart()
 	aminerals.resize(NA);
 
 	BaseLocation* start = getStartLocation(Broodwar->self());
-	while(bases[startArea]!=start) ++startArea;
+	while(bases[myStart]!=start) ++myStart;
 	updateMineralList();
 	const USet& uns = Broodwar->self()->getUnits();
 	for(USCI it=uns.begin(); it!=uns.end(); ++it) {
 		Unit* u=*it;
-		if (u->getType()==UnitTypes::Protoss_Nexus) addNexus(startArea,u);
+		if (u->getType()==UnitTypes::Protoss_Nexus) addNexus(myStart,u);
 	}
 }
