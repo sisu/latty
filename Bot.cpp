@@ -496,7 +496,6 @@ struct MkAssimA: Action {
 		makeBuilding<ASSIMILATOR>(value);
 	}
 };
-Unit* scout;
 struct ScoutA: Action {
 	ScoutA() {
 		value=-1;
@@ -550,7 +549,7 @@ void Bot::onFrame()
 	for(int i=0; i<sz(as); ++i) delete as[i];
 
 	if(sz(scouts) + sz(probes) == 7 && sz(scouts) == 0) {
-		Scout s(probes.back(),Position(1000,1000));
+		Scout s(probes.back(),bases[enemyStart]->getPosition());
 		probes.pop_back();
 	}
 
@@ -590,11 +589,17 @@ void Bot::onStart()
 	while(bases[myStart]!=start) ++myStart;
 	BaseLocation* estart = getStartLocation(Broodwar->enemy());
 	if (!estart) {
-		Broodwar->printf("guessing enemy start base...");
 		enemyStart=0;
+		int w=Broodwar->mapWidth()*TILE_SIZE, h=Broodwar->mapHeight()*TILE_SIZE;
+		Position appr(w/2,100);
+		if (bases[myStart]->getPosition().y() < h/2) appr.y()=h-100;
 		for(int i=0; i<NB; ++i) {
 			Position p = bases[i]->getPosition();
+			if (appr.getDistance(p) < appr.getDistance(bases[enemyStart]->getPosition()))
+				enemyStart=i;
 		}
+		Position p = bases[enemyStart]->getPosition();
+		Broodwar->printf("guessing enemy start base: %d %d", p.x(),p.y());
 	} else {
 		while(bases[enemyStart]!=estart) ++enemyStart;
 		Broodwar->printf("enemy start: %d %d", estart->getPosition().x(), estart->getPosition().y());
