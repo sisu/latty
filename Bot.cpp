@@ -449,7 +449,8 @@ struct MkCyberA: Action {
 };
 struct MkAssimA: Action {
 	MkAssimA() {
-		value=-1;
+		value=3;
+		if (!curCnt[GATEWAY] || !curCnt[FORGE]) value=-1;
 	}
 	void exec() {
 		makeBuilding<ASSIMILATOR>(value);
