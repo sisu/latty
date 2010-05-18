@@ -365,13 +365,39 @@ Unit* nearestMineralSource(Unit* u) {
 	}
 	return ret;
 }
+Unit* nearestGasSource(Unit* u)
+{
+	Unit* b=0;
+	double bd=1e50;
+	for(int i=0; i<sz(units); ++i) {
+		Unit* z=units[i];
+		if (z->getType()!=Protoss_Assimilator) continue;
+		if (!z->exists() || z->isBeingConstructed()) continue;
+		double d=u->getDistance(z);
+		if (d<bd) bd=d, b=z;
+	}
+	return b;
+}
 
 void taskifyProbes() {
+	int gas = min((int)log(1.+sz(probes)), 3*curCnt[ASSIMILATOR]);
 	for(int i = 0; i < sz(probes); ++i) {
 		if(!probes[i]->isIdle()) continue;
-		Unit* u = nearestMineralSource(probes[i]);
-		if(u) {
-			probes[i]->rightClick(u);
+		if (gas) {
+			Unit* u = nearestGasSource(probes[i]);
+			if(u) {
+				probes[i]->rightClick(u);
+				--gas;
+			} else {
+				Unit* u = nearestMineralSource(probes[i]);
+				if (u) 
+					probes[i]->rightClick(u);
+			}
+		} else {
+			Unit* u = nearestMineralSource(probes[i]);
+			if(u) {
+				probes[i]->rightClick(u);
+			}
 		}
 	}
 }
@@ -386,7 +412,7 @@ bool cmpA(const Action* a, const Action* b)
 }
 struct MkProbeA: Action {
 	MkProbeA() {
-		value=40./(5+2*comingCnt[PROBE]);
+		value=60./(5+2*comingCnt[PROBE]);
 	}
 	void exec() {
 		makeProbe(value);
@@ -395,7 +421,7 @@ struct MkProbeA: Action {
 struct MkPylonA: Action {
 	MkPylonA() {
 		int useds = Broodwar->self()->supplyUsed()/2;
-		value=20./(4+5*(comingSupply - useds));
+		value=15./(4+5*(comingSupply - useds));
 		if (useds>=comingSupply-2) value += 40;
 		else if (comingSupply>=useds+10) value = -1;
 		if (comingSupply>=200) value=-1;
@@ -407,7 +433,7 @@ struct MkPylonA: Action {
 struct MkGatewayA: Action {
 	MkGatewayA() {
 		int c = comingCnt[GATEWAY];
-		value = 20./(4+10*c);
+		value = 30./(4+10*c);
 		if (!curCnt[PYLON]) value=-1;
 	}
 	void exec() {
@@ -426,7 +452,7 @@ struct MkFighterA: Action {
 			else t0 = min(t0, u->getRemainingBuildTime());
 		}
 		double tt = (double)t0/UnitType(ZEALOT).buildTime();
-		value=20./(5+10*log(1.0+a+b)) * (1-tt);
+		value=30./(5+10*log(1.0+a+b)) * (1-tt);
 		if (!curCnt[GATEWAY]) value=-1;
 	}
 	void exec() {
