@@ -23,13 +23,12 @@ typedef vector<Unit*> UVec;
 typedef UVec::iterator UVI;
 typedef BWTA::Polygon Poly;
 
-const double D = 30;
-const double RAD = 100;
+const double D = 100;
+const double RAD = 400;
 
 struct Scout {
 	Unit* u;
 	Position initial_target, target;
-	bool orders_given;
 
 	Scout() {}
 
@@ -37,10 +36,10 @@ struct Scout {
 		this->u = u;
 		initial_target = target = p;
 		u->rightClick(target);
-		orders_given = true;
 	}
 
 	void find_target() {
+		Broodwar->printf("Dist to target: %f\n",u->getDistance(target));
 		if(u->getDistance(target) < D) {
 			// create new target
 			int mult = rand() % 8;
@@ -331,7 +330,7 @@ void updateProbeList() {
 			}
 		}
 
-		if (u->getType()==Protoss_Probe) probes.push_back(u);
+		if (ok && u->getType()==Protoss_Probe) probes.push_back(u);
 	}
 }
 
@@ -511,6 +510,19 @@ void Bot::onFrame()
 	updateMineralList();
 //	startingBuild.clear();
 
+	if(sz(scouts) + sz(probes) == 7 && sz(scouts) == 0) {
+		Scout s(probes.back(),bases[enemyStart]->getPosition());
+		probes.pop_back();
+		scouts.push_back(s);
+	}
+	
+	vector<Scout> newScouts;
+	for(int i = 0; i < sz(scouts); ++i) {
+		if(scouts[i].u->exists()) newScouts.push_back(scouts[i]); 
+	}
+	scouts = newScouts;
+	for(int i = 0; i < sz(scouts); ++i) scouts[i].find_target();
+
 	taskifyProbes();
 
 	TilePosition btp = getStartLocation(Broodwar->self())->getTilePosition();
@@ -547,13 +559,6 @@ void Bot::onFrame()
 		if (as[i]->value>=0) as[i]->exec();
 
 	for(int i=0; i<sz(as); ++i) delete as[i];
-
-	if(sz(scouts) + sz(probes) == 7 && sz(scouts) == 0) {
-		Scout s(probes.back(),bases[enemyStart]->getPosition());
-		probes.pop_back();
-	}
-
-	for(int i = 0; i < sz(scouts); ++i) scouts[i].find_target();
 
 
 #endif
