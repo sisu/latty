@@ -70,7 +70,7 @@ int evalBB(int a, TilePosition t, int fd, int fn, int fc)
 template<>
 int evalBP<PYLON>(int a, TilePosition t)
 {
-	return evalBB(a,t,2,-10,-1);
+	return evalBB(a,t,1,-50,-1);
 }
 template<>
 int evalBP<GATEWAY>(int a, TilePosition t)
@@ -153,7 +153,7 @@ double bestPrior;
 bool checkPrior(double prior)
 {
 	if (bestPrior<0) bestPrior=prior;
-	return bestPrior-prior<1;
+	return bestPrior-prior<.4;
 }
 template<int T>
 bool makeBuilding(double prior)
@@ -218,7 +218,7 @@ void addNexus(int a, Unit* u)
 		double dx=(ex-x)/n, dy=(ey-y)/n;
 		for(int i=0; i<n; ++i) {
 			int ix=int(x), iy=int(y);
-			const int d=5;
+			const int d=3;
 //			Broodwar->printf("banning around %d %d", ix,iy);
 			for(int i=-d; i<=d; ++i) for(int j=-d; j<=d; ++j)
 				forbidden[iy+i][ix+j]=1;
@@ -396,13 +396,6 @@ struct MkFighterA: Action {
 		return 0;
 	}
 };
-struct ExploreA: Action {
-	ExploreA() {
-		value=-1;
-	}
-	void exec() {
-	}
-};
 struct AttackA: Action {
 	AttackA() {
 		int a=curCnt[DRAGOON], b=curCnt[ZEALOT];
@@ -412,10 +405,10 @@ struct AttackA: Action {
 	}
 	void exec() {
 //		Broodwar->printf("STARTING ATTACK");
-		int target=15;
+		int target=enemyStart;
 //		while(target<NB && bases[target] != getStartLocation(Broodwar->enemy())) ++target;
 //		if (target==NB) Broodwar->printf("FAILED CHOOSING ATTACK TARGET");
-		Position to=areas[target]->getCenter();
+		Position to=bases[target]->getPosition();
 //		Broodwar->printf("Attack location: %d %d", to.x(), to.y());
 		for(int i=0; i<sz(units); ++i) {
 			Unit* u = units[i];
@@ -428,7 +421,7 @@ struct AttackA: Action {
 };
 struct MkForgeA: Action {
 	MkForgeA() {
-		value=2;
+		value=1;
 		if (comingCnt[FORGE]) value=-1;
 		if (!curCnt[PYLON]) value=-1;
 	}
@@ -438,7 +431,7 @@ struct MkForgeA: Action {
 };
 struct MkCyberA: Action {
 	MkCyberA() {
-		value=3;
+		value=1;
 		if (comingCnt[CYBER] || !curCnt[FORGE] || !comingCnt[ASSIMILATOR]) value=-1;
 		if (!curCnt[PYLON]) value=-1;
 //		Broodwar->printf("cyber %f ; %d %d", value, comingCnt[CYBER], curCnt[FORGE]);
@@ -449,11 +442,19 @@ struct MkCyberA: Action {
 };
 struct MkAssimA: Action {
 	MkAssimA() {
-		value=3;
-		if (!curCnt[GATEWAY] || !curCnt[FORGE]) value=-1;
+		value=1;
+		if (!curCnt[GATEWAY] || !curCnt[FORGE] || comingCnt[ASSIMILATOR]) value=-1;
 	}
 	void exec() {
 		makeBuilding<ASSIMILATOR>(value);
+	}
+};
+Unit* scout;
+struct ScoutA: Action {
+	ScoutA() {
+		value=-1;
+	}
+	void exec() {
 	}
 };
 
@@ -488,10 +489,11 @@ void Bot::onFrame()
 	as.push_back(new MkProbeA());
 	as.push_back(new MkGatewayA());
 	as.push_back(new MkFighterA());
-	as.push_back(new ExploreA());
+	as.push_back(new ScoutA());
 	as.push_back(new AttackA());
 	as.push_back(new MkForgeA());
 	as.push_back(new MkCyberA());
+	as.push_back(new MkAssimA());
 
 	sort(as.begin(),as.end(),cmpA);
 //	as[0]->exec();
@@ -530,6 +532,17 @@ void Bot::onStart()
 
 	BaseLocation* start = getStartLocation(Broodwar->self());
 	while(bases[myStart]!=start) ++myStart;
+	BaseLocation* estart = getStartLocation(Broodwar->enemy());
+	if (!estart) {
+		Broodwar->printf("guessing enemy start base...");
+		enemyStart=0;
+		for(int i=0; i<NB; ++i) {
+			Position p = bases[i]->getPosition();
+		}
+	} else {
+		while(bases[enemyStart]!=estart) ++enemyStart;
+		Broodwar->printf("enemy start: %d %d", estart->getPosition().x(), estart->getPosition().y());
+	}
 	updateMineralList();
 	const USet& uns = Broodwar->self()->getUnits();
 	for(USCI it=uns.begin(); it!=uns.end(); ++it) {
