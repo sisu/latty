@@ -24,7 +24,7 @@ typedef UVec::iterator UVI;
 typedef BWTA::Polygon Poly;
 
 const double D = 100;
-const double RAD = 400;
+const double RAD = 300;
 
 struct Scout {
 	Unit* u;
@@ -54,6 +54,7 @@ struct Scout {
 };
 
 vector<Scout> scouts;
+set<Unit*> seenEnemyUnits;
 
 UVec probes;
 UVec units;
@@ -509,6 +510,11 @@ void Bot::onFrame()
 	updateProbeList();
 	updateMineralList();
 //	startingBuild.clear();
+
+	copy(Broodwar->enemy()->getUnits().begin(),Broodwar->enemy()->getUnits().end(),inserter(seenEnemyUnits,seenEnemyUnits.begin()));
+	Broodwar->printf("Total enemy units seen: %d",seenEnemyUnits.size());
+
+
 
 	if(sz(scouts) + sz(probes) == 7 && sz(scouts) == 0) {
 		Scout s(probes.back(),bases[enemyStart]->getPosition());
