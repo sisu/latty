@@ -5,6 +5,10 @@
 #include <map>
 #include <cstring>
 #include <algorithm>
+#include <cmath>
+
+#define M_PI 3.14159265358979323846
+
 using namespace std;
 using namespace BWAPI;
 using namespace BWTA;
@@ -18,6 +22,39 @@ typedef USet::const_iterator USCI;
 typedef vector<Unit*> UVec;
 typedef UVec::iterator UVI;
 typedef BWTA::Polygon Poly;
+
+const double D = 30;
+const double RAD = 100;
+
+struct Scout {
+	Unit* u;
+	Position initial_target, target;
+	bool orders_given;
+
+	Scout() {}
+
+	Scout(Unit* u, Position p) {
+		this->u = u;
+		initial_target = target = p;
+		u->rightClick(target);
+		orders_given = true;
+	}
+
+	void find_target() {
+		if(u->getDistance(target) < D) {
+			// create new target
+			int mult = rand() % 8;
+			Position p;
+			p.x() = initial_target.x() + int(cos(M_PI*mult/4) * RAD);
+			p.y() = initial_target.y() + int(sin(M_PI*mult/4) * RAD);
+
+			target = p;
+			u->rightClick(target);
+		}
+	}
+};
+
+vector<Scout> scouts;
 
 UVec probes;
 UVec units;
@@ -284,6 +321,16 @@ void updateProbeList() {
 	probes.clear();
 	for(UVI it = units.begin(); it != units.end(); ++it) {
 		Unit* u = *it;
+
+		bool ok = true;
+
+		for(int i = 0; i < sz(scouts); ++i) {
+			if(scouts[i].u == u) {
+				ok = false;
+				break;
+			}
+		}
+
 		if (u->getType()==Protoss_Probe) probes.push_back(u);
 	}
 }
@@ -501,6 +548,15 @@ void Bot::onFrame()
 		if (as[i]->value>=0) as[i]->exec();
 
 	for(int i=0; i<sz(as); ++i) delete as[i];
+
+	if(sz(scouts) + sz(probes) == 7 && sz(scouts) == 0) {
+		Scout s(probes.back(),Position(1000,1000));
+		probes.pop_back();
+	}
+
+	for(int i = 0; i < sz(scouts); ++i) scouts[i].find_target();
+
+
 #endif
 }
 
