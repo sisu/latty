@@ -79,6 +79,9 @@ int curCnt[512];
 
 bool forbidden[512][512];
 
+int owner[256];
+map<Region*,int> regNum;
+
 bool okPlace(int a, TilePosition t)
 {
 	return !forbidden[t.y()][t.x()];
@@ -264,6 +267,35 @@ void addNexus(int a, Unit* u)
 	}
 }
 
+bool sused[256];
+typedef const set<Chokepoint*> CCPS;
+int sizeDFS(int n, Chokepoint* no)
+{
+	sused[n]=1;
+	Region* r=areas[n];
+	CCPS cps = r->getChokepoints();
+	int res=1;
+	for(CCPS::const_iterator i=cps.begin(); i!=cps.end(); ++i) {
+		Chokepoint* p=*i;
+		if (p==no) continue;
+		const pair<Region*,Region*> rs = p->getRegions();
+		Region* other = rs.first==r ? rs.second : rs.first;
+		int m = regNum[other];
+		if (sused[m]) continue;
+		res += sizeDFS(m, no);
+	}
+	return res;
+}
+
+void calcBorder()
+{
+	const CCPS cps = getChokepoints();
+	for(CCPS::const_iterator i=cps.begin(); i!=cps.end(); ++i) {
+		Chokepoint* p = *i;
+	}
+}
+
+
 void updateMineralList();
 void updateUnitList() {
 	units.clear();
@@ -365,13 +397,39 @@ Unit* nearestMineralSource(Unit* u) {
 	}
 	return ret;
 }
+Unit* nearestGasSource(Unit* u)
+{
+	Unit* b=0;
+	double bd=1e50;
+	for(int i=0; i<sz(units); ++i) {
+		Unit* z=units[i];
+		if (z->getType()!=Protoss_Assimilator) continue;
+		if (!z->exists() || z->isBeingConstructed()) continue;
+		double d=u->getDistance(z);
+		if (d<bd) bd=d, b=z;
+	}
+	return b;
+}
 
 void taskifyProbes() {
+	int gas = min((int)log(1.+sz(probes)), 3*curCnt[ASSIMILATOR]);
 	for(int i = 0; i < sz(probes); ++i) {
 		if(!probes[i]->isIdle()) continue;
-		Unit* u = nearestMineralSource(probes[i]);
-		if(u) {
-			probes[i]->rightClick(u);
+		if (gas) {
+			Unit* u = nearestGasSource(probes[i]);
+			if(u) {
+				probes[i]->rightClick(u);
+				--gas;
+			} else {
+				Unit* u = nearestMineralSource(probes[i]);
+				if (u) 
+					probes[i]->rightClick(u);
+			}
+		} else {
+			Unit* u = nearestMineralSource(probes[i]);
+			if(u) {
+				probes[i]->rightClick(u);
+			}
 		}
 	}
 }
@@ -386,7 +444,7 @@ bool cmpA(const Action* a, const Action* b)
 }
 struct MkProbeA: Action {
 	MkProbeA() {
-		value=40./(5+2*comingCnt[PROBE]);
+		value=60./(5+2*comingCnt[PROBE]);
 	}
 	void exec() {
 		makeProbe(value);
@@ -395,7 +453,7 @@ struct MkProbeA: Action {
 struct MkPylonA: Action {
 	MkPylonA() {
 		int useds = Broodwar->self()->supplyUsed()/2;
-		value=20./(4+5*(comingSupply - useds));
+		value=15./(4+5*(comingSupply - useds));
 		if (useds>=comingSupply-2) value += 40;
 		else if (comingSupply>=useds+10) value = -1;
 		if (comingSupply>=200) value=-1;
@@ -407,7 +465,7 @@ struct MkPylonA: Action {
 struct MkGatewayA: Action {
 	MkGatewayA() {
 		int c = comingCnt[GATEWAY];
-		value = 20./(4+10*c);
+		value = 30./(4+10*c);
 		if (!curCnt[PYLON]) value=-1;
 	}
 	void exec() {
@@ -426,7 +484,7 @@ struct MkFighterA: Action {
 			else t0 = min(t0, u->getRemainingBuildTime());
 		}
 		double tt = (double)t0/UnitType(ZEALOT).buildTime();
-		value=20./(5+10*log(1.0+a+b)) * (1-tt);
+		value=30./(5+10*log(1.0+a+b)) * (1-tt);
 		if (!curCnt[GATEWAY]) value=-1;
 	}
 	void exec() {
@@ -589,8 +647,8 @@ void Bot::onStart()
 		Region* r = *i;
 		int j;
 		for(j=0; j<NB && bases[j]->getRegion()!=r; ++j);
-		if (j<NB) areas[j]=r;
-		else areas.push_back(r);
+		if (j<NB) areas[j]=r, regNum[r]=j;
+		else regNum[r]=areas.size(), areas.push_back(r);
 	}
 	aunits.resize(NA);
 	nexuses.resize(NA);
