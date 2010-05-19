@@ -285,9 +285,29 @@ int sizeDFS(int n, Chokepoint* no)
 	}
 	return r;
 }
-
-void calcBorder()
+bool aused[256];
+template<class T>
+T areaDFS(int n, Chokepoint* no)
 {
+	aused[n]=1;
+	Region* r=areas[n];
+	CCPS cps = r->getChokepoints();
+	T res=1;
+	for(CCPS::const_iterator i=cps.begin(); i!=cps.end(); ++i) {
+		Chokepoint* p=*i;
+		if (p==no) continue;
+		const pair<Region*,Region*> rs = p->getRegions();
+		Region* other = rs.first==r ? rs.second : rs.first;
+		int m = regNum[other];
+		if (aused[m]) continue;
+		r += sizeDFS(m, no);
+	}
+	return res;
+}
+
+void calcBorders()
+{
+	// TODO: multiple borders
 	const CCPS cps = getChokepoints();
 	for(CCPS::const_iterator i=cps.begin(); i!=cps.end(); ++i) {
 		Chokepoint* p = *i;
