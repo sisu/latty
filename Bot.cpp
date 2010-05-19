@@ -23,33 +23,86 @@ typedef vector<Unit*> UVec;
 typedef UVec::iterator UVI;
 typedef BWTA::Polygon Poly;
 
-const double D = 100;
+const double D = 50;
 const double RAD = 300;
 
+/*
+int upperBaseScouting [][2] = {{72,18},{80,13},{82,5},{62,4},{61,13}};
+int lowerBaseScouting [][2] = {{63,109},{56,113},{76,122},{71,113},{63,109}};
+*/
+
+int BSC = 9;
+int BSSM = 3; // base scouting spawning magic
+
+int upperBaseScouting [][2] = {{56,10},{55,7},{62,4},{61,13},{72,18},{80,13},{82,5},{88,9},{86,12}};
+int lowerBaseScouting [][2] = {{47,112},{45,117},{51,122},{56,113},{63,109},{71,113},{76,122},{81,119},{78,115}};
 struct Scout {
 	Unit* u;
-	Position initial_target, target;
+	//Position initial_target, target;
+	TilePosition target;
+	bool usePreGivenAreas;
+	bool upper;
+	int curTarg;
+	bool dir;
 
 	Scout() {}
 
+	Scout(Unit* u, bool upper, int targ) {
+		this->u = u;
+		usePreGivenAreas = true;
+		curTarg = targ;
+		this->upper = upper;
+		dir = true;
+		updateTarget();
+	}
+/*
 	Scout(Unit* u, Position p) {
 		this->u = u;
 		initial_target = target = p;
 		u->rightClick(target);
 	}
+*/
+	void updateTarget() {
+		if(upper) {
+			target = TilePosition(upperBaseScouting[curTarg][0],upperBaseScouting[curTarg][1]);
+		} else {
+			target = TilePosition(lowerBaseScouting[curTarg][0],lowerBaseScouting[curTarg][1]);
+		}
+		u->rightClick(target);
+	}
 
 	void find_target() {
+		Broodwar->printf("Current target: %d",curTarg);
+		if(u->getDistance(target) < D) {
+			if(dir && curTarg == BSC - 1) {
+				curTarg -= BSSM;
+				dir = !dir;
+			} else if(!dir && curTarg == 0) {
+				curTarg += BSSM;
+				dir = !dir;
+			} else {
+				if(dir) ++curTarg;
+				else --curTarg;
+			}
+			updateTarget();
+		}
+		/*
 		Broodwar->printf("Dist to target: %f\n",u->getDistance(target));
 		if(u->getDistance(target) < D) {
 			// create new target
-			int mult = rand() % 8;
-			Position p;
-			p.x() = initial_target.x() + int(cos(M_PI*mult/4) * RAD);
-			p.y() = initial_target.y() + int(sin(M_PI*mult/4) * RAD);
+			if(usePreGivenAreas) {
+				
+			} else {
+				int mult = rand() % 8;
+				Position p;
+				p.x() = initial_target.x() + int(cos(M_PI*mult/4) * RAD);
+				p.y() = initial_target.y() + int(sin(M_PI*mult/4) * RAD);
 
-			target = p;
-			u->rightClick(target);
+				target = p;
+				u->rightClick(target);
+			}
 		}
+		*/
 	}
 };
 
@@ -572,10 +625,14 @@ void Bot::onFrame()
 	copy(Broodwar->enemy()->getUnits().begin(),Broodwar->enemy()->getUnits().end(),inserter(seenEnemyUnits,seenEnemyUnits.begin()));
 	Broodwar->printf("Total enemy units seen: %d",seenEnemyUnits.size());
 
-
+	
 
 	if(sz(scouts) + sz(probes) == 7 && sz(scouts) == 0) {
-		Scout s(probes.back(),bases[enemyStart]->getPosition());
+		//Scout s(probes.back(),bases[enemyStart]->getPosition());
+		bool attackUp = true;
+		if(bases[myStart]->getPosition().y() < Broodwar->mapHeight()/2*TILE_SIZE)
+			attackUp = false;
+		Scout s(probes.back(),attackUp,0);
 		probes.pop_back();
 		scouts.push_back(s);
 	}
