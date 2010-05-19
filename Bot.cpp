@@ -143,7 +143,7 @@ bool okPlace(int a, TilePosition t)
 	return !forbidden[t.y()][t.x()];
 }
 
-const int PYLON=156, GATEWAY=160, NEXUS=154, CYBER=164, FORGE=166, ASSIMILATOR=157;
+const int PYLON=156, GATEWAY=160, NEXUS=154, CYBER=164, FORGE=166, ASSIMILATOR=157, PHOTON=162;
 const int PROBE=64, ZEALOT=65, DRAGOON=66;
 
 template<int t>
@@ -189,6 +189,11 @@ template<> int evalBP<ASSIMILATOR>(int a, TilePosition t) {
 template<> int evalBP<NEXUS>(int a, TilePosition t) {
 	if (a>=NB) return (int)-1e9;
 	return (int)-bases[a]->getPosition().getDistance(t);
+}
+template<> int evalBP<PHOTON>(int a, TilePosition t) {
+	if (!borderLine) return 0;
+	int d = (int)borderLine->getCenter().getDistance(t);
+	return -abs(d-5);
 }
 
 template<int type>
@@ -540,11 +545,13 @@ void taskifyProbes() {
 void taskifyFighters()
 {
 	if (!borderLine) return;
+	Position to = borderLine->getCenter();
 	for(int i=0; i<sz(units); ++i) {
 		Unit* u = units[i];
 		UnitType t=u->getType();
 		if (t!=Protoss_Zealot && t!=Protoss_Dragoon) continue;
-		if (u->isIdle()) u->rightClick(borderLine->getCenter());
+		if (!u->isIdle()) continue;
+		if (u->getDistance(to)>100) u->rightClick(to);
 	}
 }
 
@@ -671,8 +678,10 @@ struct MkAssimA: Action {
 struct MkNexusA: Action {
 	MkNexusA() {
 		const int P_PER_B = 20;
-		double rat = curCnt[PROBE] / (double)curCnt[NEXUS];
+		double rat = curCnt[PROBE] / (double)comingCnt[NEXUS];
 		value=rat - P_PER_B;
+		// FIXME
+		value=-1;
 	}
 	void exec() {
 		int to=0;
@@ -687,9 +696,48 @@ struct MkNexusA: Action {
 		makeBuilding<NEXUS>(to);
 	}
 };
+struct MkPhotonA: Action {
+	MkPhotonA() {
+		int t = borderArea;
+		int c=0;
+		for(int i=0; i<sz(aunits[t]); ++i) {
+			Unit* u = aunits[t][i];
+			if (u->getType()==Protoss_Photon_Cannon) ++c;
+		}
+		value = 40./(4+4*c);
+		if (!curCnt[FORGE] || !hasSupport()) value=-1;
+	}
+	void exec() {
+		makeBuilding<PHOTON>(borderArea);
+	}
+	static bool hasSupport() {
+		int t = borderArea;
+		for(int i=0; i<sz(aunits[t]); ++i) {
+			Unit* u = aunits[t][i];
+			if (u->getType()==Protoss_Pylon && !u->isBeingConstructed()) return 1;
+		}
+		return 0;
+	}
+};
 struct SupportPylonA: Action {
 	SupportPylonA() {
-		value=-1;
+		int a=curCnt[DRAGOON], b=curCnt[ZEALOT];
+		int c=0;
+		for(int i=0; i<sz(aunits[borderArea]); ++i) {
+			Unit* u = aunits[borderArea][i];
+			if (u->getType()==Protoss_Pylon) ++c;
+		}
+		for(int i=0; i<sz(probes); ++i) {
+			Unit* u = probes[i];
+			if (u->isConstructing() && u->getBuildType()==Protoss_Pylon) {
+				Position to = u->getTarget()->getPosition();
+				if (areas[borderArea]->getPolygon().isInside(to)) ++c;
+			}
+		}
+
+		int pc=comingCnt[PHOTON];
+		double r = (.1+pc)/(.01+c);
+		value=(r-6)*20*log((double)a+b)/(5+4*c);
 	}
 	void exec() {
 		int to=borderArea;
@@ -763,8 +811,9 @@ void Bot::onFrame()
 	as.push_back(new MkForgeA());
 	as.push_back(new MkCyberA());
 	as.push_back(new MkAssimA());
-	as.push_back(new SupportPylonA());
 	as.push_back(new MkNexusA());
+	as.push_back(new MkPhotonA());
+	as.push_back(new SupportPylonA());
 
 	sort(as.begin(),as.end(),cmpA);
 //	as[0]->exec();
