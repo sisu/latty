@@ -132,12 +132,17 @@ int evalBP<CYBER>(int a, TilePosition t)
 template<> int evalBP<ASSIMILATOR>(int a, TilePosition t) {
 	return evalBB(a,t,0,-1,0);
 }
+template<> int evalBP<NEXUS>(int a, TilePosition t) {
+	if (a>=NB) return (int)-1e9;
+	return (int)-bases[a]->getPosition().getDistance(t);
+}
 
 template<int type>
 bool makeBuilding(int z)
 {
 	UnitType ut(type);
-	if (ut.mineralPrice() > myMnr) return 0;
+	myMnr -= ut.mineralPrice();
+	if (myMnr<0) return 0;
 //	Broodwar->printf("Building to %d: %s",z,ut.getName().c_str());
 	Region* r = areas[z];
 	const Poly& p = r->getPolygon();
@@ -177,7 +182,7 @@ bool makeBuilding(int z)
 //		bd->build(best, ut);
 		bool ok = bd->build(best, ut);
 		if (!ok) Broodwar->printf("BUILDING FAILED %s", ut.getName().c_str());
-		else myMnr -= ut.mineralPrice(), startingBuild[bd]=make_pair(0,ut);
+		else startingBuild[bd]=make_pair(0,ut);
 		return ok;
 	}
 	Broodwar->printf("failed building");
@@ -194,8 +199,12 @@ bool makeBuilding()
 double bestPrior;
 bool checkPrior(double prior)
 {
+#if 0
 	if (bestPrior<0) bestPrior=prior;
 	return bestPrior-prior<.4;
+#else
+	return 1;
+#endif
 }
 template<int T>
 bool makeBuilding(double prior)
@@ -206,7 +215,8 @@ bool makeBuilding(double prior)
 bool makeProbe(double value)
 {
 	if (!checkPrior(value)) return 0;
-	if (myMnr<50) return 0;
+	myMnr -= 50;
+	if (myMnr<0) return 0;
 	Unit* best=0;
 	int bv=-99999;
 	for(int i=0; i<sz(nexuses); ++i) {
@@ -219,7 +229,6 @@ bool makeProbe(double value)
 	}
 	if (best) {
 		bool ok = best->train(Protoss_Probe);
-		if (ok) myMnr -= 50;
 		return ok;
 	}
 	return 0;
@@ -227,7 +236,8 @@ bool makeProbe(double value)
 bool makeUnit(UnitType t, double val)
 {
 	if (!checkPrior(val)) return 0;
-	if (t.mineralPrice()>myMnr) return 0;
+	myMnr -= t.mineralPrice();
+	if (myMnr<0) return 0;
 	Unit* best=0;
 	int bv=-99999;
 	for(int i=0; i<sz(units); ++i) {
@@ -241,7 +251,6 @@ bool makeUnit(UnitType t, double val)
 	}
 	if (best) {
 		bool ok = best->train(t);
-		if (ok) myMnr -= t.mineralPrice();
 		Broodwar->printf("MAKING UNIT %s: %d", t.getName().c_str(), ok);
 		return ok;
 	}
@@ -605,6 +614,34 @@ struct MkAssimA: Action {
 		makeBuilding<ASSIMILATOR>(value);
 	}
 };
+struct MkNexusA: Action {
+	MkNexusA() {
+		const int P_PER_B = 20;
+		double rat = curCnt[PROBE] / (double)curCnt[NEXUS];
+		value=rat - P_PER_B;
+	}
+	void exec() {
+		int to=0;
+		int bv=-999999;
+		Position strt=bases[myStart]->getPosition();
+		for(int i=0; i<NB; ++i) {
+			Unit* u = nexuses[i];
+			if (u && u->exists()) continue;
+			int v=(int)-strt.getDistance(bases[i]->getPosition());
+			if (v>bv) bv=v, to=i;
+		}
+		makeBuilding<NEXUS>(to);
+	}
+};
+struct SupportPylonA: Action {
+	SupportPylonA() {
+		value=-1;
+	}
+	void exec() {
+		int to=borderArea;
+		makeBuilding<PYLON>(to);
+	}
+};
 struct ScoutA: Action {
 	ScoutA() {
 		value=-1;
@@ -663,6 +700,8 @@ void Bot::onFrame()
 	as.push_back(new MkForgeA());
 	as.push_back(new MkCyberA());
 	as.push_back(new MkAssimA());
+	as.push_back(new SupportPylonA());
+	as.push_back(new MkNexusA());
 
 	sort(as.begin(),as.end(),cmpA);
 //	as[0]->exec();
