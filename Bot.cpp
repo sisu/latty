@@ -119,6 +119,7 @@ struct Builder {
 		this->pos = pos;
 		this->ut = ut;
 		aborted = false;
+		u->rightClick(pos);
 	}
 
 	void tryToBuild() {
@@ -133,6 +134,7 @@ struct Builder {
 			aborted = true;
 		}
 		if(u->getDistance(pos) < 100) {
+			Broodwar->printf("Ma yritan rakentaa");
 			u->build(pos,ut);
 			aborted = true;
 		}
@@ -280,6 +282,7 @@ bool makeBuilding(int z)
 		probes.pop_back();
 		Builder bldr(bd,best,ut);
 		builders.push_back(bldr);
+		return true;
 	}
 	Broodwar->printf("failed building");
 	return 0;
@@ -859,6 +862,8 @@ void Bot::onFrame()
 	}
 
 	builders = newBuilders;
+
+	for(int i = 0; i < sz(builders); ++i) builders[i].tryToBuild();
 
 	taskifyProbes();
 	taskifyFighters();
