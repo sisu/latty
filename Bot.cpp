@@ -6,6 +6,7 @@
 #include <cstring>
 #include <algorithm>
 #include <cmath>
+#include <functional>
 
 #define M_PI 3.14159265358979323846
 
@@ -80,6 +81,8 @@ bool forbidden[512][512];
 
 int owner[256];
 map<Region*,int> regNum;
+Chokepoint* borderLine;
+int borderArea;
 
 bool okPlace(int a, TilePosition t)
 {
@@ -266,52 +269,71 @@ void addNexus(int a, Unit* u)
 	}
 }
 
-bool sused[256];
 typedef const set<Chokepoint*> CCPS;
-int sizeDFS(int n, Chokepoint* no)
-{
-	sused[n]=1;
-	Region* r=areas[n];
-	CCPS cps = r->getChokepoints();
-	int res=1;
-	for(CCPS::const_iterator i=cps.begin(); i!=cps.end(); ++i) {
-		Chokepoint* p=*i;
-		if (p==no) continue;
-		const pair<Region*,Region*> rs = p->getRegions();
-		Region* other = rs.first==r ? rs.second : rs.first;
-		int m = regNum[other];
-		if (sused[m]) continue;
-		res += sizeDFS(m, no);
-	}
-	return res;
-}
 bool aused[256];
-template<class T>
-T areaDFS(int n, Chokepoint* no)
+template<class T, class Fst, class Comb>
+T areaDFS(int n, Chokepoint* no, Fst fst, Comb comb)
 {
+//	Broodwar->printf("dfs %d", n);
 	aused[n]=1;
 	Region* r=areas[n];
 	CCPS cps = r->getChokepoints();
-	T res=1;
+	T res=fst(n);
 	for(CCPS::const_iterator i=cps.begin(); i!=cps.end(); ++i) {
 		Chokepoint* p=*i;
 		if (p==no) continue;
 		const pair<Region*,Region*> rs = p->getRegions();
 		Region* other = rs.first==r ? rs.second : rs.first;
 		int m = regNum[other];
+//		Brood
 		if (aused[m]) continue;
-		r += sizeDFS(m, no);
+		res = comb(res, areaDFS<T>(m, no, fst, comb));
 	}
 	return res;
 }
 
+int const1(int ){return 1;}
+int sizeDFS(int n, Chokepoint* no)
+{
+	memset(aused,0,sizeof(aused));
+	return areaDFS<int>(n, no, const1, plus<int>());
+}
+typedef pair<int,int> IP;
+IP getOwner(int n){return owner[n]>0 ? IP(1,0) : owner[n]<0 ? IP(0,1) : IP(0,0);}
+IP combOwner(IP a, IP b){return IP(a.first+b.first, a.second+b.second);}
+IP ownerDFS(int n, Chokepoint* no)
+{
+	memset(aused,0,sizeof(aused));
+	return areaDFS<IP>(n, no, getOwner, combOwner);
+}
 void calcBorders()
 {
 	// TODO: multiple borders
 	const CCPS cps = getChokepoints();
+	Chokepoint* bc=0;
+	int br=0;
+	int bv=-999;
 	for(CCPS::const_iterator i=cps.begin(); i!=cps.end(); ++i) {
 		Chokepoint* p = *i;
+		pair<Region*,Region*> rs = p->getRegions();
+		int a=regNum[rs.first], b=regNum[rs.second];
+		int sa = sizeDFS(a, p);
+//		Broodwar->printf("sa %d (%d,%d)", sa, a, b);
+		if (aused[b]) continue;
+		int sb = sizeDFS(b, p);
+		IP oa = ownerDFS(a, p);
+		IP ob = ownerDFS(b, p);
+//		Broodwar->printf("lol %d %d ; %d %d ; %d %d", sa, sb, oa.first,oa.second,ob.first,ob.second);
+		if (oa.first && oa.second) continue;
+		if (ob.first && ob.second) continue;
+		if (oa.first) {
+			if (sa>bv) bv=sa, br=a, bc=p;
+		} else {
+			if (sb>bv) bv=sb, br=b, bc=p;
+		}
 	}
+	borderLine=bc;
+	borderArea=br;
 }
 
 
@@ -450,6 +472,16 @@ void taskifyProbes() {
 				probes[i]->rightClick(u);
 			}
 		}
+	}
+}
+void taskifyFighters()
+{
+	if (!borderLine) return;
+	for(int i=0; i<sz(units); ++i) {
+		Unit* u = units[i];
+		UnitType t=u->getType();
+		if (t!=Protoss_Zealot && t!=Protoss_Dragoon) continue;
+		if (u->isIdle()) u->rightClick(borderLine->getCenter());
 	}
 }
 
@@ -602,6 +634,7 @@ void Bot::onFrame()
 	for(int i = 0; i < sz(scouts); ++i) scouts[i].find_target();
 
 	taskifyProbes();
+	taskifyFighters();
 
 	TilePosition btp = getStartLocation(Broodwar->self())->getTilePosition();
 	btp.x() -= 5, btp.y() -= 5;
@@ -640,6 +673,9 @@ void Bot::onFrame()
 
 
 #endif
+
+	void drawMap();
+	drawMap();
 }
 
 void Bot::onStart()
@@ -693,4 +729,70 @@ void Bot::onStart()
 		Unit* u=*it;
 		if (u->getType()==UnitTypes::Protoss_Nexus) addNexus(myStart,u);
 	}
+
+	owner[myStart]=1;
+	owner[enemyStart]=-1;
+	calcBorders();
+
+	if (borderLine) {
+		Position mid = borderLine->getCenter();
+		Broodwar->printf("Borderline: %d %d", mid.x(), mid.y());
+	} else {
+		Broodwar->printf("NO BORDERLINE???");
+	}
+}
+
+void drawMap()
+{
+   for(std::set<BWTA::BaseLocation*>::const_iterator i=BWTA::getBaseLocations().begin();i!=BWTA::getBaseLocations().end();i++)
+    {
+      TilePosition p=(*i)->getTilePosition();
+      Position c=(*i)->getPosition();
+
+      //draw outline of center location
+      Broodwar->drawBox(CoordinateType::Map,p.x()*32,p.y()*32,p.x()*32+4*32,p.y()*32+3*32,Colors::Blue,false);
+
+      //draw a circle at each mineral patch
+      for(std::set<BWAPI::Unit*>::const_iterator j=(*i)->getStaticMinerals().begin();j!=(*i)->getStaticMinerals().end();j++)
+      {
+        Position q=(*j)->getInitialPosition();
+        Broodwar->drawCircle(CoordinateType::Map,q.x(),q.y(),30,Colors::Cyan,false);
+      }
+
+      //draw the outlines of vespene geysers
+      for(std::set<BWAPI::Unit*>::const_iterator j=(*i)->getGeysers().begin();j!=(*i)->getGeysers().end();j++)
+      {
+        TilePosition q=(*j)->getInitialTilePosition();
+        Broodwar->drawBox(CoordinateType::Map,q.x()*32,q.y()*32,q.x()*32+4*32,q.y()*32+2*32,Colors::Orange,false);
+      }
+
+      //if this is an island expansion, draw a yellow circle around the base location
+      if ((*i)->isIsland())
+      {
+        Broodwar->drawCircle(CoordinateType::Map,c.x(),c.y(),80,Colors::Yellow,false);
+      }
+    }
+    
+    //we will iterate through all the regions and draw the polygon outline of it in green.
+    for(std::set<BWTA::Region*>::const_iterator r=BWTA::getRegions().begin();r!=BWTA::getRegions().end();r++)
+    {
+      BWTA::Polygon p=(*r)->getPolygon();
+      for(int j=0;j<(int)p.size();j++)
+      {
+        Position point1=p[j];
+        Position point2=p[(j+1) % p.size()];
+        Broodwar->drawLine(CoordinateType::Map,point1.x(),point1.y(),point2.x(),point2.y(),Colors::Green);
+      }
+    }
+
+    //we will visualize the chokepoints with red lines
+    for(std::set<BWTA::Region*>::const_iterator r=BWTA::getRegions().begin();r!=BWTA::getRegions().end();r++)
+    {
+      for(std::set<BWTA::Chokepoint*>::const_iterator c=(*r)->getChokepoints().begin();c!=(*r)->getChokepoints().end();c++)
+      {
+        Position point1=(*c)->getSides().first;
+        Position point2=(*c)->getSides().second;
+        Broodwar->drawLine(CoordinateType::Map,point1.x(),point1.y(),point2.x(),point2.y(),Colors::Red);
+      }
+    }
 }
