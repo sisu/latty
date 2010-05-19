@@ -273,7 +273,7 @@ int sizeDFS(int n, Chokepoint* no)
 	sused[n]=1;
 	Region* r=areas[n];
 	CCPS cps = r->getChokepoints();
-	int r=1;
+	int res=1;
 	for(CCPS::const_iterator i=cps.begin(); i!=cps.end(); ++i) {
 		Chokepoint* p=*i;
 		if (p==no) continue;
@@ -281,9 +281,9 @@ int sizeDFS(int n, Chokepoint* no)
 		Region* other = rs.first==r ? rs.second : rs.first;
 		int m = regNum[other];
 		if (sused[m]) continue;
-		r += sizeDFS(m, no);
+		res += sizeDFS(m, no);
 	}
-	return r;
+	return res;
 }
 bool aused[256];
 template<class T>
