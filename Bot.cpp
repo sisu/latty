@@ -524,6 +524,7 @@ void updateProbeList() {
 				break;
 			}
 		}
+		if(ownBaseScout.u == u) continue;
 
 		if (ok && u->getType()==Protoss_Probe) probes.push_back(u);
 	}
@@ -902,7 +903,9 @@ void Bot::onFrame()
 	updateMineralList();
 //	startingBuild.clear();
 
-	copy(Broodwar->enemy()->getUnits().begin(),Broodwar->enemy()->getUnits().end(),inserter(seenEnemyUnits,seenEnemyUnits.begin()));
+	copy(Broodwar->enemy()->getUnits().begin(),
+		Broodwar->enemy()->getUnits().end(),
+		inserter(seenEnemyUnits,seenEnemyUnits.begin()));
 //	Broodwar->printf("Total enemy units seen: %d",seenEnemyUnits.size());
 
 	
