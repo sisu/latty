@@ -252,12 +252,17 @@ bool makeBuilding(int z)
 	for(int y=y0; y<=y1; ++y) {
 		for(int x=x0; x<=x1; ++x) {
 			TilePosition t(x,y);
-			if (Broodwar->isExplored(t) && Broodwar->canBuildHere(0, t, ut) && okPlace(z,t)) {
+			if (Broodwar->canBuildHere(0, t, ut) && okPlace(z,t)) {
 				int v = evalBP<type>(z,t);
 				if (v>bv) bv=v, best=t;
 			}
 		}
 	}
+
+	if(best == TilePosition()) {
+		return 0;
+	}
+
 	Position pos(best);
 	Broodwar->printf("build place %d %d\n", pos.x(), pos.y());
 	Unit* bd=0;
