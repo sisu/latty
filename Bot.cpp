@@ -69,6 +69,7 @@ struct Scout {
 	}
 
 	Scout(Unit* u, vector<TilePosition> route) {
+		this->u=u;
 		this->route = route;
 		preGivenRoute = true;
 		curTarg = 0;
@@ -243,6 +244,7 @@ int uforce(UnitType t)
 	if (t==Protoss_Zealot) return 10;
 	if (t==Protoss_Dragoon) return 15;
 	if (t==Protoss_Photon_Cannon) return 20;
+	return 0;
 }
 
 struct Battle {
@@ -271,7 +273,7 @@ struct Battle {
 		battle.tick();
 	}
 
-	int winningState() {
+	double winningState() {
 		vec2 mid;
 		int mf = 0;
 		for(int i=0; i<sz(battle.myUnits); ++i) {
@@ -616,7 +618,7 @@ void updateUnitList() {
 	}
 	for(int i=0; i<sz(builders); ++i) {
 		++comingCnt[builders[i].ut.getID()];
-//		myMnr
+		myMnr -= builders[i].ut.mineralPrice();
 	}
 	for(map<Unit*,pair<int,UnitType> >::iterator i=startingBuild.begin(); i!=startingBuild.end(); ) {
 		int& x = i->second.first;
@@ -757,8 +759,8 @@ void updateBattles()
 	for(int i=0; i<sz(battles); ) {
 		Battle& b=battles[i];
 		if (b.needHelp() && b.winningState()>-30) {
-			for(int i=0; i<sz(fighters); ++i) {
-			}
+//			for(int i=0; i<sz(fighters); ++i) {
+//			}
 		}
 		b.tick();
 
@@ -1152,7 +1154,7 @@ void Bot::onFrame()
 
 
 	if(fieldScoutPatrolling) {
-		Broodwar->printf("HELLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLL");
+//		Broodwar->printf("HELLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLL %d", !!fieldScout.u);
 		if(!fieldScout.u->exists()) {
 			fieldScoutPatrolling = false;
 			fieldScout.u = NULL;
@@ -1160,7 +1162,6 @@ void Bot::onFrame()
 			Broodwar->printf("Field scout is patrolling");
 			fieldScout.find_target();	
 		}
-
 	}
 
 
