@@ -36,8 +36,11 @@ int lowerBaseScouting [][2] = {{63,109},{56,113},{76,122},{71,113},{63,109}};
 int BSC = 9;
 int BSSM = 3; // base scouting spawning magic
 
+bool ownBaseDown = false;
+
 int upperBaseScouting [][2] = {{56,10},{55,7},{62,4},{61,13},{72,18},{80,13},{82,5},{88,9},{86,12}};
 int lowerBaseScouting [][2] = {{47,112},{45,117},{51,122},{56,113},{63,109},{71,113},{76,122},{81,119},{78,115}};
+
 struct Scout {
 	Unit* u;
 	//Position initial_target, target;
@@ -148,6 +151,10 @@ int lastScoutAlive = 0;
 vector<Scout> scouts;
 vector<Builder> builders;
 set<Unit*> seenEnemyUnits;
+
+bool scoutingOwnBase = false;
+Scout ownBaseScout;
+int obsLastFrame;
 
 UVec probes;
 UVec units;
@@ -597,7 +604,7 @@ void taskifyFighters()
 		UnitType t=u->getType();
 		if (t!=Protoss_Zealot && t!=Protoss_Dragoon) continue;
 		if (!u->isIdle()) continue;
-		if (u->getDistance(to)>100) u->rightClick(to);
+		if (u->getDistance(to)>100) u->attackMove(to);
 	}
 }
 void updateBattle()
@@ -970,6 +977,44 @@ void Bot::onFrame()
 
 	for(int i = 0; i < sz(builders); ++i) builders[i].tryToBuild();
 
+	if(frameCount % (24*90) == 0 && frameCount > 24*60 && !scoutingOwnBase) {
+		if(probes.size() != 0) {
+			scoutingOwnBase = true;
+			TilePosition tp;
+			if(ownBaseDown) {
+				tp = TilePosition(lowerBaseScouting[0][0],lowerBaseScouting[0][1]);
+			} else {
+				tp = TilePosition(upperBaseScouting[0][0],upperBaseScouting[0][1]);
+			}
+			
+			double nearest = 1e9;
+			Unit* nearUnit = NULL;
+
+			for(int i = 0; i < sz(probes); ++i) {
+				double dist = probes[i]->getDistance(tp);
+				if(dist < nearest) {
+					nearest = dist;
+					nearUnit = probes[i];
+				}
+			}
+
+			remove(probes.begin(),probes.end(),nearUnit);
+			probes.pop_back();
+
+			ownBaseScout = Scout(nearUnit,!ownBaseDown,0);
+			obsLastFrame = frameCount + 24*30;
+		}
+	}
+
+	if(scoutingOwnBase && obsLastFrame < frameCount) {
+		scoutingOwnBase = false;
+		ownBaseScout.u->stop();
+		probes.push_back(ownBaseScout.u);
+	} else if(scoutingOwnBase) {
+		Broodwar->printf("Scouting own base");
+		ownBaseScout.find_target();
+	}
+
 	taskifyProbes();
 	taskifyFighters();
 	updateBattle();
@@ -1084,6 +1129,11 @@ void Bot::onStart()
 	} else {
 		Broodwar->printf("NO BORDERLINE???");
 	}
+
+
+	if(bases[myStart]->getPosition().y() < Broodwar->mapHeight()/2*TILE_SIZE) {
+		ownBaseDown = false;
+	} else ownBaseDown = true;
 }
 
 void drawMap()
