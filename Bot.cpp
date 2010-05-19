@@ -880,11 +880,44 @@ struct SupportPylonA: Action {
 		makeBuilding<PYLON>(to);
 	}
 };
-struct ScoutA: Action {
-	ScoutA() {
-		value=-1;
+struct UpgradeA: Action {
+	UpgradeA() {
+		value=.5*curCnt[ZEALOT];
+		if (!curCnt[FORGE]) value=-1;
+		Unit* f=0;
+		for(int i=0; i<sz(units); ++i) if (units[i]->getType()==Protoss_Forge) f=units[i];
+		if (!f || f->isUpgrading()) value=-1;
+		if (Broodwar->self()->getUpgradeLevel(UpgradeTypes::Protoss_Plasma_Shields)) value=-1;
 	}
 	void exec() {
+		using namespace UpgradeTypes;
+		static UpgradeType upgrades[]={Protoss_Armor,Protoss_Ground_Weapons,Protoss_Plasma_Shields};
+		Player* s = Broodwar->self();
+		Unit* f=0;
+		for(int i=0; i<sz(units); ++i) if (units[i]->getType()==Protoss_Forge) f=units[i];
+		UpgradeType us[]={Protoss_Armor,Protoss_Ground_Weapons,Protoss_Plasma_Shields};
+		for(int i=0; i<3; ++i) {
+			UpgradeType t=us[i];
+			if (!s->getUpgradeLevel(t)) {
+				f->upgrade(t), myMnr-=t.mineralPriceBase();
+				break;
+			}
+		}
+	}
+};
+struct RangeUpA: Action {
+	RangeUpA() {
+		value=2*curCnt[DRAGOON];
+		if (!curCnt[CYBER]) value=-1;
+		Unit* c=0;
+		for(int i=0; i<sz(units); ++i) if (units[i]->getType()==Protoss_Cybernetics_Core) c=units[i];
+		if (!c || c->isUpgrading()) value=-1;
+		if (Broodwar->self()->getUpgradeLevel(UpgradeTypes::Singularity_Charge)) value=-1;
+	}
+	void exec() {
+		Unit* c=0;
+		for(int i=0; i<sz(units); ++i) if (units[i]->getType()==Protoss_Cybernetics_Core) c=units[i];
+		c->upgrade(UpgradeTypes::Singularity_Charge);
 	}
 };
 
@@ -963,7 +996,6 @@ void Bot::onFrame()
 	as.push_back(new MkProbeA());
 	as.push_back(new MkGatewayA());
 	as.push_back(new MkFighterA());
-	as.push_back(new ScoutA());
 	as.push_back(new AttackA());
 	as.push_back(new MkForgeA());
 	as.push_back(new MkCyberA());
@@ -971,6 +1003,8 @@ void Bot::onFrame()
 	as.push_back(new MkNexusA());
 	as.push_back(new MkPhotonA());
 	as.push_back(new SupportPylonA());
+	as.push_back(new UpgradeA());
+	as.push_back(new RangeUpA());
 
 	sort(as.begin(),as.end(),cmpA);
 //	as[0]->exec();
