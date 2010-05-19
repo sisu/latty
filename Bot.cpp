@@ -107,6 +107,9 @@ struct Scout {
 	}
 };
 
+int frameCount = 0;
+int lastScoutAlive = 0;
+
 vector<Scout> scouts;
 set<Unit*> seenEnemyUnits;
 
@@ -615,26 +618,93 @@ struct MkFighterA: Action {
 		return 0;
 	}
 };
+
+double armyValue() {
+	int zealotCount = 0;
+	int dragoonCount = 0;
+	for(UVI it = units.begin(); it != units.end(); ++it) {
+		if((*it)->getType() == Protoss_Zealot) {
+			++zealotCount;
+		}
+		if((*it)->getType() == Protoss_Dragoon) {
+			++dragoonCount;
+		}
+	}
+	return zealotCount + dragoonCount * 1.5;
+}
+
+double enemyArmyValue(double dist) {
+	// according to scouting
+	
+	// calculate number of gateways (TODO: approximate resources?)
+
+	int gatewayCount = 0;
+	int zealotCount = 0;
+	int dragoonCount = 0;
+
+	for(USCI it = seenEnemyUnits.begin(); it != seenEnemyUnits.end(); ++it) {
+		if((*it)->getType() == Protoss_Gateway) {
+			++gatewayCount;
+		}
+		if((*it)->getType() == Protoss_Zealot) {
+			++zealotCount;
+		}
+		if((*it)->getType() == Protoss_Dragoon) {
+			++dragoonCount;
+		}
+	}
+	return gatewayCount * dist / 2000.0 + zealotCount + dragoonCount * 1.5;
+}
+
 struct AttackA: Action {
 	AttackA() {
 		int a=curCnt[DRAGOON], b=curCnt[ZEALOT];
 		if (a+b>5) value = 10*(a+b);
 		else value=-1;
-//		Broodwar->printf("attack %f",value);
 	}
+
 	void exec() {
-//		Broodwar->printf("STARTING ATTACK");
-		int target=enemyStart;
-//		while(target<NB && bases[target] != getStartLocation(Broodwar->enemy())) ++target;
-//		if (target==NB) Broodwar->printf("FAILED CHOOSING ATTACK TARGET");
-		Position to=bases[target]->getPosition();
-//		Broodwar->printf("Attack location: %d %d", to.x(), to.y());
-		for(int i=0; i<sz(units); ++i) {
-			Unit* u = units[i];
-			if (!u->isIdle()) continue;
-			UnitType t = u->getType();
-			if (t!=Protoss_Dragoon && t!=Protoss_Zealot) continue;
-			u->attackMove(to);
+		if(lastScoutAlive + 400 > frameCount) {
+			int target=enemyStart;
+			Position to=bases[target]->getPosition();
+
+			double dist = 0;
+			int cnt = 0;
+
+			for(int i = 0; i < sz(units); ++i) {
+				Unit* u = units[i];
+				UnitType t = u->getType();
+				if(t != Protoss_Dragoon && t != Protoss_Zealot) continue;
+				++cnt;
+				dist += u->getDistance(to);
+			}
+
+			dist /= cnt;
+
+			double eav = 0, av = 0;
+			eav = enemyArmyValue(dist);
+			av = armyValue();
+			
+			if(eav < av) {
+				for(int i = 0; i < sz(units); ++i) {
+					Unit* u = units[i];
+					if(!u->isIdle()) continue;
+					UnitType t = u->getType();
+					if(t != Protoss_Dragoon && t != Protoss_Zealot) continue;
+					u->attackMove(to);
+				}
+			}
+		} else {
+			int target=enemyStart;
+			Position to=bases[target]->getPosition();
+
+			for(int i=0; i<sz(units); ++i) {
+				Unit* u = units[i];
+				if (!u->isIdle()) continue;
+				UnitType t = u->getType();
+				if (t!=Protoss_Dragoon && t!=Protoss_Zealot) continue;
+				u->attackMove(to);
+			}
 		}
 	}
 };
@@ -730,6 +800,9 @@ void Bot::onFrame()
 	for(int i = 0; i < sz(scouts); ++i) {
 		if(scouts[i].u->exists()) newScouts.push_back(scouts[i]); 
 	}
+	if(scouts.size() && !newScouts.size()) {
+		lastScoutAlive = frameCount;
+	}
 	scouts = newScouts;
 	for(int i = 0; i < sz(scouts); ++i) scouts[i].find_target();
 
@@ -778,6 +851,8 @@ void Bot::onFrame()
 
 	void drawMap();
 	drawMap();
+
+	++frameCount;
 }
 
 void Bot::onStart()
