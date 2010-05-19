@@ -33,6 +33,8 @@ Unit* BW_Battle::getTarget(int i)
 				if(new_dist < myUnits[i]->getType().groundWeapon()->maxRange() + 100)
 				{
 					int target_hp = getLife(enemyUnits[k]);
+
+//					if (enemyUnits[k]->getType()==UnitTypes::Protoss_Probe) target_hp -= 100;
 					
 					// Targeting priority for running opponents is lesser.
 					if(enemyUnits[k]->getOrderTarget() == 0 && enemyUnits[k]->getTarget() == 0)
@@ -53,7 +55,7 @@ Unit* BW_Battle::getTarget(int i)
 				}
 			}
 		}
-	}
+	}// else Broodwar->printf("lol cool %d", myUnits[i]->getGroundWeaponCooldown());
 
 	return target;
 }

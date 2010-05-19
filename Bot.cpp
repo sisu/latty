@@ -138,7 +138,7 @@ struct Builder {
 			aborted = true;
 		}
 		if(u->getDistance(pos) < 100) {
-			Broodwar->printf("Ma yritan rakentaa");
+//			Broodwar->printf("Ma yritan rakentaa");
 			u->build(pos,ut);
 			aborted = true;
 		}
@@ -274,7 +274,7 @@ bool makeBuilding(int z)
 	}
 
 	Position pos(best);
-	Broodwar->printf("build place %d %d\n", pos.x(), pos.y());
+//	Broodwar->printf("build place %d %d\n", pos.x(), pos.y());
 	Unit* bd=0;
 	for(int i=0; i<sz(probes); ++i) {
 		Unit* u=probes[i];
@@ -297,7 +297,7 @@ bool makeBuilding(int z)
 		builders.push_back(bldr);
 		return true;
 	}
-	Broodwar->printf("failed building");
+//	Broodwar->printf("failed building");
 	return 0;
 }
 #if 0
@@ -363,7 +363,7 @@ bool makeUnit(UnitType t, double val)
 	}
 	if (best) {
 		bool ok = best->train(t);
-		Broodwar->printf("MAKING UNIT %s: %d", t.getName().c_str(), ok);
+//		Broodwar->printf("MAKING UNIT %s: %d", t.getName().c_str(), ok);
 		return ok;
 	}
 	return 0;
@@ -547,14 +547,16 @@ void updateMineralList() {
 	}
 }
 
-Unit* nearestMineralSource(Unit* u) {
+Unit* nearestMineralSource(Unit* u, int a) {
 	double smallestDistance = 1e50;
 	Unit* ret = NULL;
-	for(int i = 0; i < sz(minerals); ++i) {
-		double dist = u->getDistance(minerals[i]);
+	const set<Unit*>& mr = bases[a]->getMinerals();
+	for(set<Unit*>::const_iterator i=mr.begin(); i!=mr.end(); ++i) {
+		Unit* u = *i;
+		double dist = u->getDistance(u);
 		if(dist < smallestDistance) {
 			smallestDistance = dist;
-			ret = minerals[i];
+			ret = u;
 		}
 	}
 	return ret;
@@ -572,26 +574,46 @@ Unit* nearestGasSource(Unit* u)
 	}
 	return b;
 }
+Unit* mineralSource(Unit* u)
+{
+}
 
 void taskifyProbes() {
+	if (!curCnt[NEXUS]) return;
 	int gas = min((int)log(1.+sz(probes)), 3*curCnt[ASSIMILATOR]);
+	int r = (curCnt[PROBE]-gas) / curCnt[NEXUS];
+	int cgas=0;
+	for(int i=0; i<sz(probes); ++i) cgas += probes[i]->isGatheringGas();
+	gas -= cgas;
+	int curm[32]={};
+	int curg[32]={};
+	for(int i=0; i<NB; ++i) {
+		for(int j=0; j<sz(aunits[i]); ++j) {
+			Unit* u=aunits[i][j];
+			if (u->getType()==Protoss_Probe) {
+				if (u->isGatheringMinerals()) ++curm[i];
+				else if (u->isGatheringGas()) ++curg[i];
+			}
+		}
+	}
+//	Broodwar->printf("lol %d %d\n", r, gas);
+//	return;
+	int curmb=0;
 	for(int i = 0; i < sz(probes); ++i) {
 		if(!probes[i]->isIdle()) continue;
-		if (gas) {
+		if (gas>0 && curCnt[ASSIMILATOR]) {
 			Unit* u = nearestGasSource(probes[i]);
 			if(u) {
 				probes[i]->rightClick(u);
 				--gas;
-			} else {
-				Unit* u = nearestMineralSource(probes[i]);
-				if (u) 
-					probes[i]->rightClick(u);
 			}
 		} else {
-			Unit* u = nearestMineralSource(probes[i]);
-			if(u) {
-				probes[i]->rightClick(u);
-			}
+			while(curmb<NA && (!nexuses[curmb] || curm[curmb]>=r || bases[curmb]->getMinerals().empty())) ++curmb;
+			if (curmb==NA) curmb=myStart;
+//			Broodwar->printf("curmb: %d", curmb);
+//			Unit* u = nearestMineralSource(probes[i]);
+			Unit* u = nearestMineralSource(probes[i],curmb);
+			if (u) probes[i]->rightClick(u);
 		}
 	}
 }
@@ -821,7 +843,7 @@ struct MkNexusA: Action {
 		double rat = curCnt[PROBE] / (double)comingCnt[NEXUS];
 		value=rat - P_PER_B;
 		// FIXME
-		value=-1;
+		//value=-1;
 	}
 	void exec() {
 		int to=0;
@@ -1011,7 +1033,7 @@ void Bot::onFrame()
 		ownBaseScout.u->stop();
 		probes.push_back(ownBaseScout.u);
 	} else if(scoutingOwnBase) {
-		Broodwar->printf("Scouting own base");
+//		Broodwar->printf("Scouting own base");
 		ownBaseScout.find_target();
 	}
 
