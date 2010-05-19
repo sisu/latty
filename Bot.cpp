@@ -41,24 +41,37 @@ bool ownBaseDown = false;
 int upperBaseScouting [][2] = {{56,10},{55,7},{62,4},{61,13},{72,18},{80,13},{82,5},{88,9},{86,12}};
 int lowerBaseScouting [][2] = {{47,112},{45,117},{51,122},{56,113},{63,109},{71,113},{76,122},{81,119},{78,115}};
 
+int OBC = 6;
+
+int otherBasesWhenUp [][2] = {{115,9},{116,81},{116,117},{12,116},{9,49},{11,7}};
+int otherBasesWhenDown [][2] = {{12,116},{9,49},{11,7},{115,9},{116,81},{116,117}};
+
 struct Scout {
 	Unit* u;
 	//Position initial_target, target;
 	TilePosition target;
-	bool usePreGivenAreas;
 	bool upper;
 	int curTarg;
 	bool dir;
 
-	Scout() {}
+	bool preGivenRoute;
+	vector<TilePosition> route;
+
+	Scout() { u = NULL;}
 
 	Scout(Unit* u, bool upper, int targ) {
 		this->u = u;
-		usePreGivenAreas = true;
 		curTarg = targ;
 		this->upper = upper;
 		dir = true;
+		preGivenRoute = false;
 		updateTarget();
+	}
+
+	Scout(Unit* u, vector<TilePosition> route) {
+		this->route = route;
+		preGivenRoute = true;
+		curTarg = 0;
 	}
 /*
 	Scout(Unit* u, Position p) {
@@ -68,28 +81,65 @@ struct Scout {
 	}
 */
 	void updateTarget() {
-		if(upper) {
-			target = TilePosition(upperBaseScouting[curTarg][0],upperBaseScouting[curTarg][1]);
+		if(preGivenRoute) {
+			target = route[curTarg];
+			u->rightClick(target);
 		} else {
-			target = TilePosition(lowerBaseScouting[curTarg][0],lowerBaseScouting[curTarg][1]);
+			if(upper) {
+				target = TilePosition(upperBaseScouting[curTarg][0],upperBaseScouting[curTarg][1]);
+			} else {
+				target = TilePosition(lowerBaseScouting[curTarg][0],lowerBaseScouting[curTarg][1]);
+			}
+			u->rightClick(target);
 		}
-		u->rightClick(target);
 	}
 
 	void find_target() {
 //		Broodwar->printf("Current target: %d",curTarg);
-		if(u->getDistance(target) < D) {
-			if(dir && curTarg == BSC - 1) {
-				curTarg -= BSSM;
-				dir = !dir;
-			} else if(!dir && curTarg == 0) {
-				curTarg += BSSM;
-				dir = !dir;
-			} else {
-				if(dir) ++curTarg;
-				else --curTarg;
+
+		int enemyShooters = 0;
+
+		for(USCI it = Broodwar->enemy()->getUnits().begin();
+			it != Broodwar->enemy()->getUnits().end(); ++it) {
+			Unit* eu = *it;
+			if(!eu->exists()) continue;
+			if(u->getDistance(eu) < 150) {
+				if(eu->getType() == Protoss_Dragoon || eu->getType() == Protoss_Zealot) {
+					++enemyShooters;
+				} else if(eu->getType() == Protoss_Photon_Cannon) {
+					enemyShooters += 2;
+				}
 			}
-			updateTarget();
+		}
+
+		if(enemyShooters >= 2) {
+			if(curTarg == sz(route) - 1) {
+				u->stop();
+			} else {
+				++curTarg;
+				updateTarget();
+			}
+		} else if(u->getDistance(target) < D) {
+			if(preGivenRoute) {
+				if(curTarg == sz(route) - 1) {
+					u->stop();
+				} else {
+					++curTarg;
+					updateTarget();
+				}
+			} else {
+				if(dir && curTarg == BSC - 1) {
+					curTarg -= BSSM;
+					dir = !dir;
+				} else if(!dir && curTarg == 0) {
+					curTarg += BSSM;
+					dir = !dir;
+				} else {
+					if(dir) ++curTarg;
+					else --curTarg;
+				}
+				updateTarget();
+			}
 		}
 		/*
 		Broodwar->printf("Dist to target: %f\n",u->getDistance(target));
@@ -147,6 +197,10 @@ struct Builder {
 
 int frameCount = 0;
 int lastScoutAlive = 0;
+
+int fieldScoutsMade = 0;
+bool fieldScoutPatrolling = false;
+Scout fieldScout;
 
 vector<Scout> scouts;
 vector<Builder> builders;
@@ -501,6 +555,10 @@ void updateUnitList() {
 			++comingCnt[startingBuild[u].second.getID()];
 		}
 	}
+	for(int i=0; i<sz(builders); ++i) {
+		++comingCnt[builders[i].ut.getID()];
+//		myMnr
+	}
 	for(map<Unit*,pair<int,UnitType> >::iterator i=startingBuild.begin(); i!=startingBuild.end(); ) {
 		int& x = i->second.first;
 		Unit* u = i->first;
@@ -524,7 +582,12 @@ void updateProbeList() {
 				break;
 			}
 		}
+
+		for(int i = 0; i < sz(builders); ++i) {
+			if(builders[i].u == u) ok = false;
+		}
 		if(ownBaseScout.u == u) continue;
+		if(fieldScout.u == u) continue;
 
 		if (ok && u->getType()==Protoss_Probe) probes.push_back(u);
 	}
@@ -941,6 +1004,7 @@ void Bot::onFrame()
 		inserter(seenEnemyUnits,seenEnemyUnits.begin()));
 //	Broodwar->printf("Total enemy units seen: %d",seenEnemyUnits.size());
 
+	Broodwar->printf("Number of known enemy units %d",Broodwar->enemy()->getUnits().size());
 	
 
 	if(sz(scouts) + sz(probes) == 7 && sz(scouts) == 0) {
@@ -979,6 +1043,51 @@ void Bot::onFrame()
 	builders = newBuilders;
 
 	for(int i = 0; i < sz(builders); ++i) builders[i].tryToBuild();
+
+	Broodwar->printf("Probecount: %d",(int)probes.size());
+
+
+	if(probes.size() > 10) {
+		//Broodwar->printf("IN PROBLEMS");
+		if(!fieldScoutPatrolling) {
+			vector<TilePosition> vec;
+			if(fieldScoutsMade % 2) {
+				for(int i = OBC - 1; i >= 0; --i) {
+					if(ownBaseDown) {
+						vec.push_back(TilePosition(otherBasesWhenDown[i][0],otherBasesWhenDown[i][1]));
+					} else {
+						vec.push_back(TilePosition(otherBasesWhenUp[i][0],otherBasesWhenUp[i][1]));
+					}
+				}
+			} else {
+				for(int i = 0; i < OBC; ++i) {
+					if(ownBaseDown) {
+						vec.push_back(TilePosition(otherBasesWhenDown[i][0],otherBasesWhenDown[i][1]));
+					} else {
+						vec.push_back(TilePosition(otherBasesWhenUp[i][0],otherBasesWhenUp[i][1]));
+					}
+				}
+			}
+			++fieldScoutsMade;
+			fieldScout = Scout(probes.back(),vec);
+			probes.pop_back();
+			fieldScoutPatrolling = true;
+		}
+	}
+
+
+	if(fieldScoutPatrolling) {
+		Broodwar->printf("HELLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLL");
+		if(!fieldScout.u->exists()) {
+			fieldScoutPatrolling = false;
+			fieldScout.u = NULL;
+		} else {
+			Broodwar->printf("Field scout is patrolling");
+			fieldScout.find_target();	
+		}
+
+	}
+
 
 	if(frameCount % (24*90) == 0 && frameCount > 24*60 && !scoutingOwnBase) {
 		if(probes.size() != 0) {
