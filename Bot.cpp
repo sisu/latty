@@ -204,10 +204,6 @@ int evalBB(int a, TilePosition t, int fd, int fn, int fc)
 	return 0;
 }
 
-template<> int evalBP<PYLON>(int a, TilePosition t) {
-	if (a==borderArea) return evalBP<PHOTON>(a,t);
-	return evalBB(a,t,1,-50,-1);
-}
 template<> int evalBP<GATEWAY>(int a, TilePosition t) {
 	return evalBB(a,t,0,-4,-2);
 }
@@ -228,6 +224,10 @@ template<> int evalBP<PHOTON>(int a, TilePosition t) {
 	if (!borderLine) return 0;
 	int d = (int)borderLine->getCenter().getDistance(t);
 	return -abs(d-250);
+}
+template<> int evalBP<PYLON>(int a, TilePosition t) {
+	if (a==borderArea) return evalBP<PHOTON>(a,t);
+	return evalBB(a,t,1,-50,-1);
 }
 
 template<int type>
