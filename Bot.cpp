@@ -108,10 +108,45 @@ struct Scout {
 	}
 };
 
+struct Builder {
+	TilePosition pos;
+	UnitType ut;
+	Unit* u;
+	bool aborted;
+
+	Builder() {}
+	Builder(Unit* u, TilePosition pos, UnitType ut) {
+		this->u = u;
+		this->pos = pos;
+		this->ut = ut;
+		aborted = false;
+		u->rightClick(pos);
+	}
+
+	void tryToBuild() {
+		double nearest = 1e9;
+		for(USCI it = Broodwar->enemy()->getUnits().begin(); it != Broodwar->enemy()->getUnits().end(); ++it) {
+			double dist = u->getDistance(*it);
+			if(dist < nearest) nearest = dist;
+		}
+
+		if(nearest < 400) {
+			u->stop();
+			aborted = true;
+		}
+		if(u->getDistance(pos) < 100) {
+			Broodwar->printf("Ma yritan rakentaa");
+			u->build(pos,ut);
+			aborted = true;
+		}
+	}
+};
+
 int frameCount = 0;
 int lastScoutAlive = 0;
 
 vector<Scout> scouts;
+vector<Builder> builders;
 set<Unit*> seenEnemyUnits;
 
 UVec probes;
@@ -220,12 +255,17 @@ bool makeBuilding(int z)
 	for(int y=y0; y<=y1; ++y) {
 		for(int x=x0; x<=x1; ++x) {
 			TilePosition t(x,y);
-			if (Broodwar->isExplored(t) && Broodwar->canBuildHere(0, t, ut) && okPlace(z,t)) {
+			if (Broodwar->canBuildHere(0, t, ut) && okPlace(z,t)) {
 				int v = evalBP<type>(z,t);
 				if (v>bv) bv=v, best=t;
 			}
 		}
 	}
+
+	if(best == TilePosition()) {
+		return 0;
+	}
+
 	Position pos(best);
 	Broodwar->printf("build place %d %d\n", pos.x(), pos.y());
 	Unit* bd=0;
@@ -238,10 +278,17 @@ bool makeBuilding(int z)
 	if (bd) {
 //		Broodwar->printf("ordering builder %d %d ; %d", bd->getPosition().x(), bd->getPosition().y(), bd->getType());
 //		bd->build(best, ut);
+		/*
 		bool ok = bd->build(best, ut);
 		if (!ok) Broodwar->printf("BUILDING FAILED %s", ut.getName().c_str());
 		else startingBuild[bd]=make_pair(0,ut);
 		return ok;
+		*/
+		remove(probes.begin(),probes.end(),bd);
+		probes.pop_back();
+		Builder bldr(bd,best,ut);
+		builders.push_back(bldr);
+		return true;
 	}
 	Broodwar->printf("failed building");
 	return 0;
@@ -872,6 +919,23 @@ void Bot::onFrame()
 	}
 	scouts = newScouts;
 	for(int i = 0; i < sz(scouts); ++i) scouts[i].find_target();
+
+	vector<Builder> newBuilders;
+	for(int i = 0; i < sz(builders); ++i) {
+		if(builders[i].u->exists()) newBuilders.push_back(builders[i]);
+	}
+
+	builders = newBuilders;
+	newBuilders.clear();
+
+	for(int i = 0; i < sz(builders); ++i) {
+		if(builders[i].aborted) probes.push_back(builders[i].u);
+		else newBuilders.push_back(builders[i]);
+	}
+
+	builders = newBuilders;
+
+	for(int i = 0; i < sz(builders); ++i) builders[i].tryToBuild();
 
 	taskifyProbes();
 	taskifyFighters();
