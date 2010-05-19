@@ -1,5 +1,6 @@
 #include "Bot.hpp"
 #include "Vec.h"
+#include "battle.h"
 #include <set>
 #include <vector>
 #include <map>
@@ -73,7 +74,7 @@ struct Scout {
 	}
 
 	void find_target() {
-		Broodwar->printf("Current target: %d",curTarg);
+//		Broodwar->printf("Current target: %d",curTarg);
 		if(u->getDistance(target) < D) {
 			if(dir && curTarg == BSC - 1) {
 				curTarg -= BSSM;
@@ -141,6 +142,8 @@ map<Region*,int> regNum;
 Chokepoint* borderLine;
 int borderArea;
 
+BW_Battle* battle;
+
 bool okPlace(int a, TilePosition t)
 {
 	return !forbidden[t.y()][t.x()];
@@ -167,7 +170,7 @@ int evalBB(int a, TilePosition t, int fd, int fn, int fc)
 }
 
 template<> int evalBP<PYLON>(int a, TilePosition t) {
-	// FIXME???
+	if (a==borderArea) return evalBP<PHOTON>(a,t);
 	return evalBB(a,t,1,-50,-1);
 }
 template<> int evalBP<GATEWAY>(int a, TilePosition t) {
@@ -189,7 +192,7 @@ template<> int evalBP<NEXUS>(int a, TilePosition t) {
 template<> int evalBP<PHOTON>(int a, TilePosition t) {
 	if (!borderLine) return 0;
 	int d = (int)borderLine->getCenter().getDistance(t);
-	return -abs(d-50);
+	return -abs(d-250);
 }
 
 template<int type>
@@ -550,6 +553,20 @@ void taskifyFighters()
 		if (u->getDistance(to)>100) u->rightClick(to);
 	}
 }
+void updateBattle()
+{
+	if (!battle) return;
+	const USet& es = Broodwar->enemy()->getUnits();
+	for(USCI i=es.begin(); i!=es.end(); ++i) {
+		battle->addUnit(*i);
+	}
+	battle->tick();
+
+	if (battle->myUnits.size() < 3) {
+		delete battle;
+		battle=0;
+	}
+}
 
 struct Action {
 	double value;
@@ -628,17 +645,7 @@ struct MkFighterA: Action {
 };
 
 double armyValue() {
-	int zealotCount = 0;
-	int dragoonCount = 0;
-	for(UVI it = units.begin(); it != units.end(); ++it) {
-		if((*it)->getType() == Protoss_Zealot) {
-			++zealotCount;
-		}
-		if((*it)->getType() == Protoss_Dragoon) {
-			++dragoonCount;
-		}
-	}
-	return zealotCount + dragoonCount * 1.5;
+	return curCnt[ZEALOT]+curCnt[DRAGOON]*1.5;
 }
 
 double enemyArmyValue(double dist) {
@@ -664,14 +671,25 @@ double enemyArmyValue(double dist) {
 	return gatewayCount * dist / 2000.0 + zealotCount + dragoonCount * 1.5;
 }
 
+int unitsOnArea(int a, UnitType t)
+{
+	int r=0;
+	for(int i=0; i<sz(aunits[a]); ++i) {
+		Unit* u=aunits[a][i];
+		if (u->getType()==t) ++r;
+	}
+	return r;
+}
+
 struct AttackA: Action {
 	AttackA() {
-		int a=curCnt[DRAGOON], b=curCnt[ZEALOT];
+		pair<Region*,Region*> p = borderLine->getRegions();
+		int x=regNum[p.first], y=regNum[p.second];
+		int a=unitsOnArea(x, Protoss_Zealot) + unitsOnArea(y, Protoss_Zealot);
+		int b=unitsOnArea(x, Protoss_Dragoon) + unitsOnArea(y, Protoss_Dragoon);
 		if (a+b>5) value = 10*(a+b);
-		else value=-1;
-	}
+		else value = -1;
 
-	void exec() {
 		if(lastScoutAlive + 400 > frameCount) {
 			int target=enemyStart;
 			Position to=bases[target]->getPosition();
@@ -692,27 +710,24 @@ struct AttackA: Action {
 			double eav = 0, av = 0;
 			eav = enemyArmyValue(dist);
 			av = armyValue();
-			
-			if(eav < av) {
-				for(int i = 0; i < sz(units); ++i) {
-					Unit* u = units[i];
-					if(!u->isIdle()) continue;
-					UnitType t = u->getType();
-					if(t != Protoss_Dragoon && t != Protoss_Zealot) continue;
-					u->attackMove(to);
-				}
-			}
-		} else {
-			int target=enemyStart;
-			Position to=bases[target]->getPosition();
 
-			for(int i=0; i<sz(units); ++i) {
-				Unit* u = units[i];
-				if (!u->isIdle()) continue;
-				UnitType t = u->getType();
-				if (t!=Protoss_Dragoon && t!=Protoss_Zealot) continue;
-				u->attackMove(to);
-			}
+			if (eav > av) value = -1;
+		}
+
+		if (battle) value=-1;
+	}
+
+	void exec() {
+		int target=enemyStart;
+		Position to=bases[target]->getPosition();
+		battle = new BW_Battle;
+		for(int i = 0; i < sz(units); ++i) {
+			Unit* u = units[i];
+			if(!u->isIdle()) continue;
+			UnitType t = u->getType();
+			if(t != Protoss_Dragoon && t != Protoss_Zealot) continue;
+			u->attackMove(to);
+			battle->addUnit(u);
 		}
 	}
 };
@@ -780,7 +795,7 @@ struct MkPhotonA: Action {
 		if (!curCnt[FORGE] || !hasSupport()) value=-1;
 	}
 	void exec() {
-		Broodwar->printf("Photon??? %d", myMnr);
+//		Broodwar->printf("Photon??? %d", myMnr);
 		makeBuilding<PHOTON>(borderArea);
 	}
 	static bool hasSupport() {
@@ -811,6 +826,7 @@ struct SupportPylonA: Action {
 		int pc=comingCnt[PHOTON];
 		double r = (.1+pc)/(.01+c);
 		value=(r-6)*20*log(1.+a+b)/(5+4*c);
+		if (!comingCnt[FORGE]) value=-1;
 	}
 	void exec() {
 		int to=borderArea;
@@ -833,7 +849,7 @@ void Bot::onFrame()
 //	startingBuild.clear();
 
 	copy(Broodwar->enemy()->getUnits().begin(),Broodwar->enemy()->getUnits().end(),inserter(seenEnemyUnits,seenEnemyUnits.begin()));
-	Broodwar->printf("Total enemy units seen: %d",seenEnemyUnits.size());
+//	Broodwar->printf("Total enemy units seen: %d",seenEnemyUnits.size());
 
 	
 
@@ -859,6 +875,7 @@ void Bot::onFrame()
 
 	taskifyProbes();
 	taskifyFighters();
+	updateBattle();
 
 	TilePosition btp = getStartLocation(Broodwar->self())->getTilePosition();
 	btp.x() -= 5, btp.y() -= 5;
