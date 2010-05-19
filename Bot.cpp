@@ -163,24 +163,17 @@ int evalBB(int a, TilePosition t, int fd, int fn, int fc)
 	return 0;
 }
 
-template<>
-int evalBP<PYLON>(int a, TilePosition t)
-{
+template<> int evalBP<PYLON>(int a, TilePosition t) {
+	// FIXME???
 	return evalBB(a,t,1,-50,-1);
 }
-template<>
-int evalBP<GATEWAY>(int a, TilePosition t)
-{
+template<> int evalBP<GATEWAY>(int a, TilePosition t) {
 	return evalBB(a,t,0,-4,-2);
 }
-template<>
-int evalBP<FORGE>(int a, TilePosition t)
-{
+template<> int evalBP<FORGE>(int a, TilePosition t) {
 	return evalBB(a,t,0,-50,-1);
 }
-template<>
-int evalBP<CYBER>(int a, TilePosition t)
-{
+template<> int evalBP<CYBER>(int a, TilePosition t) {
 	return evalBB(a,t,0,-5,-1);
 }
 template<> int evalBP<ASSIMILATOR>(int a, TilePosition t) {
@@ -193,7 +186,7 @@ template<> int evalBP<NEXUS>(int a, TilePosition t) {
 template<> int evalBP<PHOTON>(int a, TilePosition t) {
 	if (!borderLine) return 0;
 	int d = (int)borderLine->getCenter().getDistance(t);
-	return -abs(d-5);
+	return -abs(d-50);
 }
 
 template<int type>
@@ -433,7 +426,7 @@ void updateUnitList() {
 			nexuses[j]=u;
 
 		++comingCnt[u->getType().getID()];
-		++curCnt[u->getType().getID()];
+		if (!u->isBeingConstructed()) ++curCnt[u->getType().getID()];
 	}
 
 	myMnr=Broodwar->self()->minerals();
@@ -586,7 +579,15 @@ struct MkPylonA: Action {
 struct MkGatewayA: Action {
 	MkGatewayA() {
 		int c = comingCnt[GATEWAY];
-		value = 30./(4+10*c);
+		int cc = curCnt[GATEWAY];
+		int d=0;
+		for(int i=0; i<sz(units); ++i) {
+			Unit* u = units[i];
+			if (u->getType()!=Protoss_Gateway || u->isBeingConstructed()) continue;
+			d += u->isTraining();
+		}
+		double r= cc ? (double)d/cc : 0;
+		value = (1-r)*40./(4+12*c);
 		if (!curCnt[PYLON]) value=-1;
 	}
 	void exec() {
@@ -704,10 +705,12 @@ struct MkPhotonA: Action {
 			Unit* u = aunits[t][i];
 			if (u->getType()==Protoss_Photon_Cannon) ++c;
 		}
-		value = 40./(4+4*c);
+		value = 30./(4+10*c);
+//		Broodwar->printf("support: %d", hasSupport());
 		if (!curCnt[FORGE] || !hasSupport()) value=-1;
 	}
 	void exec() {
+		Broodwar->printf("Photon??? %d", myMnr);
 		makeBuilding<PHOTON>(borderArea);
 	}
 	static bool hasSupport() {
@@ -730,14 +733,14 @@ struct SupportPylonA: Action {
 		for(int i=0; i<sz(probes); ++i) {
 			Unit* u = probes[i];
 			if (u->isConstructing() && u->getBuildType()==Protoss_Pylon) {
-				Position to = u->getTarget()->getPosition();
+				Position to = u->getTargetPosition();
 				if (areas[borderArea]->getPolygon().isInside(to)) ++c;
 			}
 		}
 
 		int pc=comingCnt[PHOTON];
 		double r = (.1+pc)/(.01+c);
-		value=(r-6)*20*log((double)a+b)/(5+4*c);
+		value=(r-6)*20*log(1.+a+b)/(5+4*c);
 	}
 	void exec() {
 		int to=borderArea;
