@@ -184,7 +184,66 @@ map<Region*,int> regNum;
 Chokepoint* borderLine;
 int borderArea;
 
-BW_Battle* battle;
+int uforce(UnitType t)
+{
+	if (t==Protoss_Zealot) return 10;
+	if (t==Protoss_Dragoon) return 15;
+	if (t==Protoss_Photon_Cannon) return 20;
+}
+
+struct Battle {
+	BW_Battle battle;
+	Position dest;
+
+	Battle(Position to) {
+		dest=to;
+		for(int i = 0; i < sz(units); ++i) {
+			// FIXME
+			Unit* u = units[i];
+			if(!u->isIdle()) continue;
+			UnitType t = u->getType();
+			if(t != Protoss_Dragoon && t != Protoss_Zealot) continue;
+			u->attackMove(to);
+			battle.addUnit(u);
+		}
+	}
+
+	void tick() {
+		// FIXME
+		const USet& es = Broodwar->enemy()->getUnits();
+		for(USCI i=es.begin(); i!=es.end(); ++i) {
+			battle.addUnit(*i);
+		}
+		battle.tick();
+	}
+
+	int winningState() {
+		vec2 mid;
+		int mf = 0;
+		for(int i=0; i<sz(battle.myUnits); ++i) {
+			mid += toVec(battle.myUnits[i]->getPosition());
+			mf += uforce(battle.myUnits[i]->getType());
+		}
+		mid /= (double)sz(battle.myUnits);
+		Position mp = toPos(mid);
+
+		double ef=0;
+		const USet& es = Broodwar->enemy()->getUnits();
+		for(USCI i=es.begin(); i!=es.end(); ++i) {
+			Unit* u = *i;
+			if (u->getDistance(mp)<1000) ef += uforce(u->getType());
+		}
+		return mf - ef;
+	}
+	int needHelp() {
+		return 1;
+	}
+	bool over() {
+		return battle.myUnits.size()<3;
+	}
+};
+
+vector<Battle> battles;
 
 bool okPlace(int a, TilePosition t)
 {
@@ -630,18 +689,18 @@ void taskifyFighters()
 		if (u->getDistance(to)>100) u->attackMove(to);
 	}
 }
-void updateBattle()
+void updateBattles()
 {
-	if (!battle) return;
-	const USet& es = Broodwar->enemy()->getUnits();
-	for(USCI i=es.begin(); i!=es.end(); ++i) {
-		battle->addUnit(*i);
-	}
-	battle->tick();
+	for(int i=0; i<sz(battles); ) {
+		Battle& b=battles[i];
+		if (b.needHelp() && b.winningState()>-30) {
+			for(int i=0; i<sz(fighters); ++i) {
+			}
+		}
+		b.tick();
 
-	if (battle->myUnits.size() < 3) {
-		delete battle;
-		battle=0;
+		if (b.over()) battles[i]=battles.back(), battles.pop_back();
+		else ++i;
 	}
 }
 
@@ -791,21 +850,15 @@ struct AttackA: Action {
 			if (eav > av) value = -1;
 		}
 
-		if (battle) value=-1;
+		// FIXME
+		if (!battles.empty()) value=-1;
 	}
 
 	void exec() {
 		int target=enemyStart;
 		Position to=bases[target]->getPosition();
-		battle = new BW_Battle;
-		for(int i = 0; i < sz(units); ++i) {
-			Unit* u = units[i];
-			if(!u->isIdle()) continue;
-			UnitType t = u->getType();
-			if(t != Protoss_Dragoon && t != Protoss_Zealot) continue;
-			u->attackMove(to);
-			battle->addUnit(u);
-		}
+		Battle b(to);
+		battles.push_back(b);
 	}
 };
 struct MkForgeA: Action {
@@ -840,7 +893,7 @@ struct MkAssimA: Action {
 };
 struct MkNexusA: Action {
 	MkNexusA() {
-		const int P_PER_B = 20;
+		const int P_PER_B = 15;
 		double rat = curCnt[PROBE] / (double)comingCnt[NEXUS];
 		value=rat - P_PER_B;
 		// FIXME
@@ -1042,7 +1095,7 @@ void Bot::onFrame()
 
 	taskifyProbes();
 	taskifyFighters();
-	updateBattle();
+	updateBattles();
 
 	TilePosition btp = getStartLocation(Broodwar->self())->getTilePosition();
 	btp.x() -= 5, btp.y() -= 5;
