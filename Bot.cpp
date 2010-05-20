@@ -214,6 +214,7 @@ int obsLastFrame;
 UVec probes;
 UVec units;
 UVec minerals;
+UVec fighters;
 
 vector<Region*> areas;
 vector<BaseLocation*> bases;
@@ -234,10 +235,9 @@ int curCnt[512];
 
 bool forbidden[512][512];
 
-int owner[256];
 map<Region*,int> regNum;
-Chokepoint* borderLine;
-int borderArea;
+//Chokepoint* borderLine;
+//int borderArea;
 
 int uforce(UnitType t)
 {
@@ -309,6 +309,9 @@ bool okPlace(int a, TilePosition t)
 const int PYLON=156, GATEWAY=160, NEXUS=154, CYBER=164, FORGE=166, ASSIMILATOR=157, PHOTON=162;
 const int PROBE=64, ZEALOT=65, DRAGOON=66;
 
+#include "area.h"
+
+
 template<int t>
 int evalBP(int a, TilePosition t){return 0;}
 
@@ -343,12 +346,15 @@ template<> int evalBP<NEXUS>(int a, TilePosition t) {
 	return (int)-bases[a]->getPosition().getDistance(t);
 }
 template<> int evalBP<PHOTON>(int a, TilePosition t) {
+	return 0;
+#if 0
 	if (!borderLine) return 0;
 	int d = (int)borderLine->getCenter().getDistance(t);
 	return -abs(d-250);
+#endif
 }
 template<> int evalBP<PYLON>(int a, TilePosition t) {
-	if (a==borderArea) return evalBP<PHOTON>(a,t);
+//	if (a==borderArea) return evalBP<PHOTON>(a,t);
 	return evalBB(a,t,1,-50,-1);
 }
 
@@ -505,73 +511,6 @@ void addNexus(int a, Unit* u)
 	}
 }
 
-typedef const set<Chokepoint*> CCPS;
-bool aused[256];
-template<class T, class Fst, class Comb>
-T areaDFS(int n, Chokepoint* no, Fst fst, Comb comb)
-{
-//	Broodwar->printf("dfs %d", n);
-	aused[n]=1;
-	Region* r=areas[n];
-	CCPS cps = r->getChokepoints();
-	T res=fst(n);
-	for(CCPS::const_iterator i=cps.begin(); i!=cps.end(); ++i) {
-		Chokepoint* p=*i;
-		if (p==no) continue;
-		const pair<Region*,Region*> rs = p->getRegions();
-		Region* other = rs.first==r ? rs.second : rs.first;
-		int m = regNum[other];
-//		Brood
-		if (aused[m]) continue;
-		res = comb(res, areaDFS<T>(m, no, fst, comb));
-	}
-	return res;
-}
-
-int const1(int ){return 1;}
-int sizeDFS(int n, Chokepoint* no)
-{
-	memset(aused,0,sizeof(aused));
-	return areaDFS<int>(n, no, const1, plus<int>());
-}
-typedef pair<int,int> IP;
-IP getOwner(int n){return owner[n]>0 ? IP(1,0) : owner[n]<0 ? IP(0,1) : IP(0,0);}
-IP combOwner(IP a, IP b){return IP(a.first+b.first, a.second+b.second);}
-IP ownerDFS(int n, Chokepoint* no)
-{
-	memset(aused,0,sizeof(aused));
-	return areaDFS<IP>(n, no, getOwner, combOwner);
-}
-void calcBorders()
-{
-	// TODO: multiple borders
-	const CCPS cps = getChokepoints();
-	Chokepoint* bc=0;
-	int br=0;
-	int bv=-999;
-	for(CCPS::const_iterator i=cps.begin(); i!=cps.end(); ++i) {
-		Chokepoint* p = *i;
-		pair<Region*,Region*> rs = p->getRegions();
-		int a=regNum[rs.first], b=regNum[rs.second];
-		int sa = sizeDFS(a, p);
-//		Broodwar->printf("sa %d (%d,%d)", sa, a, b);
-		if (aused[b]) continue;
-		int sb = sizeDFS(b, p);
-		IP oa = ownerDFS(a, p);
-		IP ob = ownerDFS(b, p);
-//		Broodwar->printf("lol %d %d ; %d %d ; %d %d", sa, sb, oa.first,oa.second,ob.first,ob.second);
-		if (oa.first && oa.second) continue;
-		if (ob.first && ob.second) continue;
-		if (oa.first) {
-			if (sa>bv) bv=sa, br=a, bc=p;
-		} else {
-			if (sb>bv) bv=sb, br=b, bc=p;
-		}
-	}
-	borderLine=bc;
-	borderArea=br;
-}
-
 
 void updateMineralList();
 void updateUnitList() {
@@ -651,6 +590,25 @@ void updateProbeList() {
 		if(fieldScout.u == u) continue;
 
 		if (ok && u->getType()==Protoss_Probe) probes.push_back(u);
+	}
+}
+void updateFighterList()
+{
+	fighters.clear();
+	vector<Unit*> reserved;
+	for(int i=0; i<sz(battles); ++i) {
+		Battle& b=battles[i];
+		for(int j=0; j<sz(b.battle.myUnits); ++j) {
+			reserved.push_back(b.battle.myUnits[j]);
+		}
+	}
+	sort(reserved.begin(),reserved.end());
+	for(int i=0; i<sz(units); ++i) {
+		Unit* u = units[i];
+		if (u->getType()==Protoss_Zealot || u->getType()==Protoss_Dragoon) {
+			if (!binary_search(reserved.begin(),reserved.end(),u))
+				fighters.push_back(u);
+		}
 	}
 }
 
@@ -742,15 +700,33 @@ void taskifyProbes() {
 		}
 	}
 }
+int forceCount(int area)
+{
+	int f=0;
+	for(int i=0; i<sz(aunits[area]); ++i) {
+		Unit* u = aunits[area][i];
+		f += uforce(u->getType());
+	}
+	return f;
+}
 void taskifyFighters()
 {
-	if (!borderLine) return;
-	Position to = borderLine->getCenter();
-	for(int i=0; i<sz(units); ++i) {
-		Unit* u = units[i];
-		UnitType t=u->getType();
-		if (t!=Protoss_Zealot && t!=Protoss_Dragoon) continue;
+	double s=0;
+	for(int i=0; i<NA; ++i) {
+		if (!borderArea[i]) continue;
+		s += danger[i];
+	}
+	int tf=0;
+	for(int i=0; i<sz(fighters); ++i) tf+=uforce(fighters[i]->getType());
+
+	int c=0, cf=forceCount(c);
+	for(int i=0; i<sz(fighters); ++i) {
+		Unit* u = fighters[i];
 		if (!u->isIdle()) continue;
+
+		while(c<NA && (!borderArea[c] || cf>=tf*danger[c]/s)) ++c, cf=forceCount(c);
+		if (c==NA) c=myStart, cf=forceCount(0), s*=.5;
+		Position to = areas[c]->getCenter();
 		if (u->getDistance(to)>100) u->attackMove(to);
 	}
 }
@@ -884,6 +860,7 @@ int unitsOnArea(int a, UnitType t)
 
 struct AttackA: Action {
 	AttackA() {
+#if 0
 		pair<Region*,Region*> p = borderLine->getRegions();
 		int x=regNum[p.first], y=regNum[p.second];
 		int a=unitsOnArea(x, Protoss_Zealot) + unitsOnArea(y, Protoss_Zealot);
@@ -917,6 +894,10 @@ struct AttackA: Action {
 
 		// FIXME
 		if (!battles.empty()) value=-1;
+
+#else
+		value=-1;
+#endif
 	}
 
 	void exec() {
@@ -978,23 +959,35 @@ struct MkNexusA: Action {
 	}
 };
 struct MkPhotonA: Action {
-	MkPhotonA() {
-		int t = borderArea;
+	static double aval(int a) {
 		int c=0;
-		for(int i=0; i<sz(aunits[t]); ++i) {
-			Unit* u = aunits[t][i];
+		for(int i=0; i<sz(aunits[a]); ++i) {
+			Unit* u = aunits[a][i];
 			if (u->getType()==Protoss_Photon_Cannon) ++c;
 		}
-		value = 30./(4+10*c);
+		double v = 30./(4+10*c);
 //		Broodwar->printf("support: %d", hasSupport());
-		if (!curCnt[FORGE] || !hasSupport()) value=-1;
+		if (!curCnt[FORGE] || !hasSupport(a)) v=-1;
+		return v;
+	}
+	int dest;
+	MkPhotonA() {
+		double bv=-1;
+		int t = 0;
+		for(int i=0; i<NA; ++i) {
+			if (!borderArea[i]) continue;
+			double v = aval(i);
+			if (v>bv) bv=v, t=i;
+		}
+		value = bv;
+		dest=t;
 	}
 	void exec() {
 //		Broodwar->printf("Photon??? %d", myMnr);
-		makeBuilding<PHOTON>(borderArea);
+		makeBuilding<PHOTON>(dest);
 	}
-	static bool hasSupport() {
-		int t = borderArea;
+	static bool hasSupport(int a) {
+		int t = a;
 		for(int i=0; i<sz(aunits[t]); ++i) {
 			Unit* u = aunits[t][i];
 			if (u->getType()==Protoss_Pylon && !u->isBeingConstructed()) return 1;
@@ -1003,28 +996,40 @@ struct MkPhotonA: Action {
 	}
 };
 struct SupportPylonA: Action {
-	SupportPylonA() {
+	static double aval(int ar) {
 		int a=curCnt[DRAGOON], b=curCnt[ZEALOT];
 		int c=0;
-		for(int i=0; i<sz(aunits[borderArea]); ++i) {
-			Unit* u = aunits[borderArea][i];
+		for(int i=0; i<sz(aunits[ar]); ++i) {
+			Unit* u = aunits[ar][i];
 			if (u->getType()==Protoss_Pylon) ++c;
 		}
 		for(int i=0; i<sz(probes); ++i) {
 			Unit* u = probes[i];
 			if (u->isConstructing() && u->getBuildType()==Protoss_Pylon) {
 				Position to = u->getTargetPosition();
-				if (areas[borderArea]->getPolygon().isInside(to)) ++c;
+				if (areas[ar]->getPolygon().isInside(to)) ++c;
 			}
 		}
 
 		int pc=comingCnt[PHOTON];
 		double r = (.1+pc)/(.01+c);
-		value=(r-6)*20*log(1.+a+b)/(5+4*c);
+		double value=(r-6)*20*log(1.+a+b)/(5+4*c);
 		if (!comingCnt[FORGE]) value=-1;
+		return value;
+	}
+	int dest;
+	SupportPylonA() {
+		double bv=-1;
+		int t=0;
+		for(int i=0; i<NA; ++i) {
+			double v=aval(i);
+			if (v>bv) bv=v, t=i;
+		}
+		dest=t;
+		value = bv;
 	}
 	void exec() {
-		int to=borderArea;
+		int to=dest;
 		makeBuilding<PYLON>(to);
 	}
 };
@@ -1074,6 +1079,8 @@ void Bot::onFrame()
 	updateUnitList();
 	updateProbeList();
 	updateMineralList();
+	updateFighterList();
+	analyzeAreaState();
 //	startingBuild.clear();
 
 	copy(Broodwar->enemy()->getUnits().begin(),
@@ -1255,6 +1262,17 @@ void Bot::onFrame()
 	++frameCount;
 }
 
+void expandArea(bool* arr, int a)
+{
+	const set<Chokepoint*>& cs = areas[a]->getChokepoints();
+	for(set<Chokepoint*>::const_iterator i=cs.begin(); i!=cs.end(); ++i) {
+		Chokepoint* c=*i;
+		pair<Region*,Region*> p = c->getRegions();
+		if (p.first==areas[a]) arr[regNum[p.second]]=1;
+		else arr[regNum[p.first]]=1;
+	}
+}
+
 void Bot::onStart()
 {
 	Broodwar->enableFlag(Flag::UserInput);
@@ -1307,21 +1325,30 @@ void Bot::onStart()
 		if (u->getType()==UnitTypes::Protoss_Nexus) addNexus(myStart,u);
 	}
 
+	myArea[myStart]=1;
+	enemyArea[enemyStart]=1;
+	expandArea(myArea,myStart);
+	expandArea(enemyArea,enemyStart);
+
 	owner[myStart]=1;
 	owner[enemyStart]=-1;
-	calcBorders();
+//	calcBorders();
 
+#if 0
 	if (borderLine) {
 		Position mid = borderLine->getCenter();
 		Broodwar->printf("Borderline: %d %d", mid.x(), mid.y());
 	} else {
 		Broodwar->printf("NO BORDERLINE???");
 	}
+#endif
 
 
 	if(bases[myStart]->getPosition().y() < Broodwar->mapHeight()/2*TILE_SIZE) {
 		ownBaseDown = false;
 	} else ownBaseDown = true;
+
+	makeGraph();
 }
 
 void drawMap()
