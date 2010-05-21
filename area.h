@@ -8,75 +8,6 @@ bool borderArea[64];
 
 vector<int> conn[64];
 
-#if 0
-typedef const set<Chokepoint*> CCPS;
-bool aused[256];
-template<class T, class Fst, class Comb>
-T areaDFS(int n, Chokepoint* no, Fst fst, Comb comb)
-{
-//	Broodwar->printf("dfs %d", n);
-	aused[n]=1;
-	Region* r=areas[n];
-	CCPS cps = r->getChokepoints();
-	T res=fst(n);
-	for(CCPS::const_iterator i=cps.begin(); i!=cps.end(); ++i) {
-		Chokepoint* p=*i;
-		if (p==no) continue;
-		const pair<Region*,Region*> rs = p->getRegions();
-		Region* other = rs.first==r ? rs.second : rs.first;
-		int m = regNum[other];
-//		Brood
-		if (aused[m]) continue;
-		res = comb(res, areaDFS<T>(m, no, fst, comb));
-	}
-	return res;
-}
-
-int const1(int ){return 1;}
-int sizeDFS(int n, Chokepoint* no)
-{
-	memset(aused,0,sizeof(aused));
-	return areaDFS<int>(n, no, const1, plus<int>());
-}
-typedef pair<int,int> IP;
-IP getOwner(int n){return owner[n]>0 ? IP(1,0) : owner[n]<0 ? IP(0,1) : IP(0,0);}
-IP combOwner(IP a, IP b){return IP(a.first+b.first, a.second+b.second);}
-IP ownerDFS(int n, Chokepoint* no)
-{
-	memset(aused,0,sizeof(aused));
-	return areaDFS<IP>(n, no, getOwner, combOwner);
-}
-void calcBorders()
-{
-	// TODO: multiple borders
-	const CCPS cps = getChokepoints();
-	Chokepoint* bc=0;
-	int br=0;
-	int bv=-999;
-	for(CCPS::const_iterator i=cps.begin(); i!=cps.end(); ++i) {
-		Chokepoint* p = *i;
-		pair<Region*,Region*> rs = p->getRegions();
-		int a=regNum[rs.first], b=regNum[rs.second];
-		int sa = sizeDFS(a, p);
-//		Broodwar->printf("sa %d (%d,%d)", sa, a, b);
-		if (aused[b]) continue;
-		int sb = sizeDFS(b, p);
-		IP oa = ownerDFS(a, p);
-		IP ob = ownerDFS(b, p);
-//		Broodwar->printf("lol %d %d ; %d %d ; %d %d", sa, sb, oa.first,oa.second,ob.first,ob.second);
-		if (oa.first && oa.second) continue;
-		if (ob.first && ob.second) continue;
-		if (oa.first) {
-			if (sa>bv) bv=sa, br=a, bc=p;
-		} else {
-			if (sb>bv) bv=sb, br=b, bc=p;
-		}
-	}
-	borderLine=bc;
-	borderArea=br;
-}
-#endif
-
 struct DangerS {
 	int a;
 	double d;
@@ -84,7 +15,7 @@ struct DangerS {
 		return d>s.d;
 	}
 };
-void calcDangerFrom(bool* start, bool* end, double f)
+void calcDangerFrom(bool* start, bool* end, double f, double ff)
 {
 	bool dused[64]={};
 	priority_queue<DangerS> q;
@@ -99,7 +30,7 @@ void calcDangerFrom(bool* start, bool* end, double f)
 		q.pop();
 		if (dused[d.a]) continue;
 		dused[d.a]=1;
-		danger[d.a] += f/(1+d.d/1000.);
+		danger[d.a] += f/(1+d.d/ff);
 		if (end[d.a]) continue;
 
 		for(int i=0; i<sz(conn[d.a]); ++i) {
@@ -114,7 +45,7 @@ void calcDangerFrom(bool* start, bool* end, double f)
 void calcBorderArea()
 {
 	memset(danger,0,sizeof(danger));
-	calcDangerFrom(enemyArea, myArea,1);
+	calcDangerFrom(enemyArea, myArea,1,1000);
 	for(int i=0; i<NA; ++i) {
 		if (!myArea[i]) continue;
 		for(int j=0; j<sz(conn[i]); ++j) if (danger[conn[i][j]]>0) {
@@ -122,17 +53,33 @@ void calcBorderArea()
 			Broodwar->printf("borderArea: %d", i);
 		}
 	}
-	calcDangerFrom(myArea, enemyArea,-.1);
+	calcDangerFrom(myArea, enemyArea,-.8,2000);
 }
 void calcAreas()
 {
 	memset(myArea,0,sizeof(myArea));
 	memset(enemyArea,0,sizeof(enemyArea));
 	for(int i=0; i<NA; ++i) {
+		int c=0;
 		for(int j=0; j<sz(aunits[i]); ++j) {
 			Unit* u = aunits[i][j];
 			if (u->getType().isBuilding()) myArea[i]=1;
+			if (u->getType()==Protoss_Zealot || u->getType()==Protoss_Dragoon)
+				++c;
 		}
+		// FIXME: slow?
+		int ec=0;
+		const set<Unit*>& es = Broodwar->enemy()->getUnits();
+		for(set<Unit*>::const_iterator j=es.begin(); j!=es.end(); ++j) {
+			Unit* u = *j;
+			if (u->getType()==Protoss_Zealot || u->getType()==Protoss_Dragoon
+				|| u->getType()==Protoss_Photon_Cannon) {
+				if (areas[i]->getPolygon().isInside(u->getPosition()))
+					++ec;
+			}
+		}
+
+		if (c>2*ec) myArea[i]=1;
 //		if (danger[i]<=0) myArea[i]=1;
 	}
 	enemyArea[enemyStart]=1;
@@ -155,3 +102,25 @@ void makeGraph()
 		}
 	}
 }
+
+#if 0
+void expand()
+{
+	if (!battles.empty()) return;
+	if (fighters.size()<2) return;
+	int to=0;
+	double bv=-1e9;
+	for(int i=0; i<NA; ++i) {
+		if (myArea[i]) continue;
+		if (danger[i]<=0) continue;
+		double v = -danger[i];
+		if (v>bv) bv=v, to=i;
+	}
+	if (-bv < .1) {
+		Position p = areas[to]->getCenter();
+		Broodwar->printf("EXPANDING TO %d %d", p.x(),p.y());
+		Battle b(p);
+		battles.push_back(b);
+	}
+}
+#endif

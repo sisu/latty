@@ -188,7 +188,7 @@ struct Builder {
 			u->stop();
 			aborted = true;
 		}
-		if(u->getDistance(pos) < 100) {
+		if(u->getDistance(pos) < 200) {
 //			Broodwar->printf("Ma yritan rakentaa");
 			u->build(pos,ut);
 			aborted = true;
@@ -253,12 +253,9 @@ struct Battle {
 
 	Battle(Position to) {
 		dest=to;
-		for(int i = 0; i < sz(units); ++i) {
-			// FIXME
-			Unit* u = units[i];
-			if(!u->isIdle()) continue;
+		for(int i = 0; i < sz(fighters); ++i) {
+			Unit* u = fighters[i];
 			UnitType t = u->getType();
-			if(t != Protoss_Dragoon && t != Protoss_Zealot) continue;
 			u->attackMove(to);
 			battle.addUnit(u);
 		}
@@ -271,6 +268,10 @@ struct Battle {
 			battle.addUnit(*i);
 		}
 		battle.tick();
+		for(int i=0; i<sz(battle.myUnits); ++i) {
+			Unit* u = battle.myUnits[i];
+			if (u->isIdle()) u->rightClick(dest);
+		}
 	}
 
 	double winningState() {
@@ -295,7 +296,21 @@ struct Battle {
 		return 1;
 	}
 	bool over() {
-		return battle.myUnits.size()<3;
+		if (sz(battle.myUnits)<3) return 1;
+		bool see=0;
+		for(int i=0; i<sz(battle.myUnits); ++i) {
+			Unit* u = battle.myUnits[i];
+			if (u->getDistance(dest) < 200) see=1;
+		}
+		if (!see) return 0;
+
+		bool enemy=0;
+		const USet& es = Broodwar->enemy()->getUnits();
+		for(USCI i=es.begin(); i!=es.end(); ++i) {
+			Unit* u = *i;
+			if (u->getDistance(dest)<1000) enemy=1;
+		}
+		return !enemy;
 	}
 };
 
@@ -439,11 +454,37 @@ bool checkPrior(double prior)
 	return 1;
 #endif
 }
+bool hasSupport(int ar)
+{
+	for(int i=0; i<sz(aunits[ar]); ++i) {
+		Unit* u = aunits[ar][i];
+		if (u->getType()==Protoss_Pylon && !u->isBeingConstructed())
+			return 1;
+	}
+	return 0;
+}
 template<int T>
 bool makeBuilding(double prior)
 {
 	if (!checkPrior(prior)) return 0;
-	return makeBuilding<T>(myStart);
+	int t=myStart;
+	double bv=-1e50;
+	for(int i=0; i<NB; ++i) {
+		if (!nexuses[i]) continue;
+		double v=0;
+		if (T==PYLON) {
+			int c=0;
+			for(int j=0; j<sz(aunits[i]); ++j) {
+				Unit* u=aunits[i][j];
+				if (u->getType()==PYLON) ++c;
+			}
+			v = 1./c;
+		} else {
+			if (!hasSupport(i)) continue;
+		}
+		if (v>bv) bv=v, t=i;
+	}
+	return makeBuilding<T>(t);
 }
 bool makeProbe(double value)
 {
@@ -712,10 +753,14 @@ int forceCount(int area)
 void taskifyFighters()
 {
 	double s=0;
+	double s0=1e50;
 	for(int i=0; i<NA; ++i) {
 		if (!borderArea[i]) continue;
 		s += danger[i];
+		s0 = min(s0, danger[i]);
 	}
+	s0 += .01;
+	s += NA*s0;
 	if (!s) Broodwar->printf("no danger???"), s=.01;
 	else Broodwar->printf("danger: %f", s);
 	int tf=0;
@@ -725,8 +770,9 @@ void taskifyFighters()
 	for(int i=0; i<sz(fighters); ++i) {
 		Unit* u = fighters[i];
 		if (!u->isIdle()) continue;
+		// FIXME: unnecessary moving around
 
-		while(c<NA && (!borderArea[c] || cf>tf*danger[c]/s)) {
+		while(c<NA && (!borderArea[c] || cf>tf*(s0+danger[c])/s)) {
 			++c;
 			if (c==NA) {
 				c=myStart;cf=forceCount(c);
@@ -739,6 +785,7 @@ void taskifyFighters()
 		Position to = areas[c]->getCenter();
 		Broodwar->printf("sending to %d %d", to.x(), to.y());
 		if (u->getDistance(to)>100) u->attackMove(to);
+		cf += uforce(u->getType());
 	}
 }
 void updateBattles()
@@ -907,11 +954,15 @@ struct AttackA: Action {
 		if (!battles.empty()) value=-1;
 
 #else
+		double eav = enemyArmyValue(1000);
+		double av = armyValue();
 		value=-1;
+		if (av/eav > 1.1) value=av/eav;
 #endif
 	}
 
 	void exec() {
+		Broodwar->printf("ATTACK");
 		int target=enemyStart;
 		Position to=bases[target]->getPosition();
 		Battle b(to);
@@ -958,14 +1009,16 @@ struct MkNexusA: Action {
 	}
 	void exec() {
 		int to=0;
-		int bv=-999999;
+		double bv=-1e50;
 		Position strt=bases[myStart]->getPosition();
 		for(int i=0; i<NB; ++i) {
 			Unit* u = nexuses[i];
 			if (u && u->exists()) continue;
-			int v=(int)-strt.getDistance(bases[i]->getPosition());
+//			int v=(int)-strt.getDistance(bases[i]->getPosition());
+			double v = -danger[i];
 			if (v>bv) bv=v, to=i;
 		}
+		Broodwar->printf("building nexus; danger: -%f", bv);
 		makeBuilding<NEXUS>(to);
 	}
 };
@@ -1008,6 +1061,8 @@ struct MkPhotonA: Action {
 };
 struct SupportPylonA: Action {
 	static double aval(int ar) {
+		if (!borderArea[ar]) return -1;
+		if (danger[ar]<=0) return -1;
 		int a=curCnt[DRAGOON], b=curCnt[ZEALOT];
 		int c=0;
 		for(int i=0; i<sz(aunits[ar]); ++i) {
@@ -1023,10 +1078,10 @@ struct SupportPylonA: Action {
 		}
 
 		int pc=comingCnt[PHOTON];
-		double r = (.1+pc)/(.01+c);
+		double r = (.5+pc)/(.01+c);
 		double value=(r-6)*20*log(1.+a+b)/(5+4*c);
 		if (!comingCnt[FORGE]) value=-1;
-		return value;
+		return value * (1-danger[ar]);
 	}
 	int dest;
 	SupportPylonA() {
@@ -1037,7 +1092,7 @@ struct SupportPylonA: Action {
 			if (v>bv) bv=v, t=i;
 		}
 		dest=t;
-		value = bv;
+		value = .5*bv;
 	}
 	void exec() {
 		int to=dest;
@@ -1092,6 +1147,7 @@ void Bot::onFrame()
 	updateMineralList();
 	updateFighterList();
 	analyzeAreaState();
+//	expand();
 //	startingBuild.clear();
 
 	copy(Broodwar->enemy()->getUnits().begin(),
