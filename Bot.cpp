@@ -256,6 +256,7 @@ struct Battle {
 	bool gathered;
 
 	Battle(Position to) {
+		battle.noRetreat=1;
 		gathered=0;
 		gather=centerArea;
 		for(int i=0; i<NA; ++i) if (borderArea[i]) gather=i;
@@ -276,7 +277,7 @@ struct Battle {
 		for(USCI i=es.begin(); i!=es.end(); ++i) {
 			battle.addUnit(*i);
 		}
-		if (edist()<500) battle.tick();
+		if (edist()<1000) battle.tick();
 
 		if (!gathered) {
 			Position g = areas[gather]->getCenter();
@@ -439,7 +440,7 @@ bool makeBuilding(int z)
 	for(int y=y0; y<=y1; ++y) {
 		for(int x=x0; x<=x1; ++x) {
 			TilePosition t(x,y);
-			if (Broodwar->canBuildHere(0, t, ut) && okPlace(z,t,ut)) {
+			if (Broodwar->canBuildHere(0, t, ut) && (ut==Protoss_Assimilator || okPlace(z,t,ut))) {
 				int v = evalBP<type>(z,t);
 				if (v>bv) bv=v, best=t;
 			}
@@ -447,6 +448,7 @@ bool makeBuilding(int z)
 	}
 
 	if(best == TilePosition()) {
+		Broodwar->printf("NO BUILD POSITION FOUND %s; %d %d", ut.getName().c_str(), z, myStart);
 		return 0;
 	}
 
@@ -466,7 +468,10 @@ bool makeBuilding(int z)
 		if (type==ASSIMILATOR) {
 			bool ok = bd->build(best, ut);
 			if (!ok) Broodwar->printf("BUILDING FAILED %s", ut.getName().c_str());
-			else startingBuild[bd]=make_pair(0,ut);
+			else {
+				Broodwar->printf("BUILDING ASSIM SUCCESFUL");
+				startingBuild[bd]=make_pair(0,ut);
+			}
 			return ok;
 		} else {
 			remove(probes.begin(),probes.end(),bd);
@@ -475,6 +480,8 @@ bool makeBuilding(int z)
 			builders.push_back(bldr);
 			return true;
 		}
+	} else {
+		Broodwar->printf("NO BUILDER FOUND %s", ut.getName().c_str());
 	}
 //	Broodwar->printf("failed building");
 	return 0;
@@ -834,6 +841,14 @@ void taskifyFighters()
 		cf += uforce(u->getType());
 	}
 }
+bool inBattle(int a)
+{
+	for(int i=0; i<sz(battles); ++i) {
+		Position t = battles[i].dest;
+		if (areas[a]->getPolygon().isInside(t)) return 1;
+	}
+	return 0;
+}
 void updateBattles()
 {
 	for(int i=0; i<sz(battles); ) {
@@ -846,6 +861,23 @@ void updateBattles()
 
 		if (b.over()) battles[i]=battles.back(), battles.pop_back();
 		else ++i;
+	}
+
+	const set<Unit*>& es = Broodwar->enemy()->getUnits();
+	for(set<Unit*>::const_iterator i=es.begin(); i!=es.end(); ++i) {
+		Unit* u = *i;
+		int tt=-1;
+		for(int i=0; i<NA; ++i) {
+			if (!myArea[i]) continue;
+			if (areas[i]->getPolygon().isInside(u->getPosition())) {
+				tt=i;
+				break;
+			}
+		}
+		if (tt>=0 && !inBattle(tt)) {
+			Battle b(u->getPosition());
+			battles.push_back(b);
+		}
 	}
 }
 
@@ -1042,6 +1074,7 @@ struct MkAssimA: Action {
 		if (!curCnt[GATEWAY] || !comingCnt[FORGE] || comingCnt[ASSIMILATOR]) value=-1;
 	}
 	void exec() {
+		Broodwar->printf("TRYING ASSIM");
 		makeBuilding<ASSIMILATOR>(value);
 	}
 };
