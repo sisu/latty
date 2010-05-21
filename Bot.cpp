@@ -113,7 +113,7 @@ struct Scout {
 			}
 		}
 
-		if(enemyShooters >= 2) {
+		if(preGivenRoute && enemyShooters >= 2) {
 			if(curTarg == sz(route) - 1) {
 				u->stop();
 			} else {
@@ -188,7 +188,7 @@ struct Builder {
 			u->stop();
 			aborted = true;
 		}
-		if(u->getDistance(pos) < 200) {
+		if(u->getDistance(pos) < 250) {
 //			Broodwar->printf("Ma yritan rakentaa");
 			u->build(pos,ut);
 			aborted = true;
@@ -247,17 +247,25 @@ int uforce(UnitType t)
 	if (t==Protoss_Photon_Cannon) return 20;
 	return 0;
 }
+extern bool borderArea[];
 
 struct Battle {
 	BW_Battle battle;
 	Position dest;
+	int gather;
+	bool gathered;
 
 	Battle(Position to) {
+		gathered=0;
+		gather=centerArea;
+		for(int i=0; i<NA; ++i) if (borderArea[i]) gather=i;
+
 		dest=to;
 		for(int i = 0; i < sz(fighters); ++i) {
 			Unit* u = fighters[i];
 			UnitType t = u->getType();
-			u->attackMove(to);
+//			u->attackMove(to);
+			u->attackMove(areas[gather]->getCenter());
 			battle.addUnit(u);
 		}
 	}
@@ -268,28 +276,57 @@ struct Battle {
 		for(USCI i=es.begin(); i!=es.end(); ++i) {
 			battle.addUnit(*i);
 		}
-		battle.tick();
+		if (edist()<500) battle.tick();
+
+		if (!gathered) {
+			Position g = areas[gather]->getCenter();
+			double s=0;
+			for(int i=0; i<sz(battle.myUnits); ++i) {
+				Unit* u = battle.myUnits[i];
+				s += u->getDistance(g);
+			}
+			s /= sz(battle.myUnits);
+			if (s<200) gathered=1;
+			else return;
+		}
+
 		for(int i=0; i<sz(battle.myUnits); ++i) {
 			Unit* u = battle.myUnits[i];
-			if (u->isIdle()) u->rightClick(dest);
+			if (u->isIdle()) u->attackMove(dest);
 		}
 	}
 
-	double winningState() {
+	Position midPos() {
 		vec2 mid;
-		int mf = 0;
 		for(int i=0; i<sz(battle.myUnits); ++i) {
 			mid += toVec(battle.myUnits[i]->getPosition());
-			mf += uforce(battle.myUnits[i]->getType());
 		}
 		mid /= (double)sz(battle.myUnits);
-		Position mp = toPos(mid);
+		return toPos(mid);
+	}
+	double edist() {
+		Position mp = midPos();
+		const USet& es = Broodwar->enemy()->getUnits();
+		double d=1e50;
+		for(USCI i=es.begin(); i!=es.end(); ++i) {
+			Unit* u = *i;
+			d = min(d, u->getDistance(mp));
+		}
+		return d;
+	}
+
+	double winningState() {
+		Position mp = midPos();
 
 		double ef=0;
 		const USet& es = Broodwar->enemy()->getUnits();
 		for(USCI i=es.begin(); i!=es.end(); ++i) {
 			Unit* u = *i;
 			if (u->getDistance(mp)<1000) ef += uforce(u->getType());
+		}
+		int mf = 0;
+		for(int i=0; i<sz(battle.myUnits); ++i) {
+			mf += uforce(battle.myUnits[i]->getType());
 		}
 		return mf - ef;
 	}
@@ -317,9 +354,12 @@ struct Battle {
 
 vector<Battle> battles;
 
-bool okPlace(int a, TilePosition t)
+bool okPlace(int a, TilePosition t, UnitType u)
 {
-	return !forbidden[t.y()][t.x()];
+	for(int i=0; i<u.tileHeight(); ++i)
+		for(int j=0; j<u.tileWidth(); ++j)
+			if (forbidden[t.y()+i][t.x()+j]) return 0;
+	return 1;
 }
 
 const int PYLON=156, GATEWAY=160, NEXUS=154, CYBER=164, FORGE=166, ASSIMILATOR=157, PHOTON=162;
@@ -399,7 +439,7 @@ bool makeBuilding(int z)
 	for(int y=y0; y<=y1; ++y) {
 		for(int x=x0; x<=x1; ++x) {
 			TilePosition t(x,y);
-			if (Broodwar->canBuildHere(0, t, ut) && okPlace(z,t)) {
+			if (Broodwar->canBuildHere(0, t, ut) && okPlace(z,t,ut)) {
 				int v = evalBP<type>(z,t);
 				if (v>bv) bv=v, best=t;
 			}
@@ -422,17 +462,19 @@ bool makeBuilding(int z)
 	if (bd) {
 //		Broodwar->printf("ordering builder %d %d ; %d", bd->getPosition().x(), bd->getPosition().y(), bd->getType());
 //		bd->build(best, ut);
-		/*
-		bool ok = bd->build(best, ut);
-		if (!ok) Broodwar->printf("BUILDING FAILED %s", ut.getName().c_str());
-		else startingBuild[bd]=make_pair(0,ut);
-		return ok;
-		*/
-		remove(probes.begin(),probes.end(),bd);
-		probes.pop_back();
-		Builder bldr(bd,best,ut);
-		builders.push_back(bldr);
-		return true;
+
+		if (type==ASSIMILATOR) {
+			bool ok = bd->build(best, ut);
+			if (!ok) Broodwar->printf("BUILDING FAILED %s", ut.getName().c_str());
+			else startingBuild[bd]=make_pair(0,ut);
+			return ok;
+		} else {
+			remove(probes.begin(),probes.end(),bd);
+			probes.pop_back();
+			Builder bldr(bd,best,ut);
+			builders.push_back(bldr);
+			return true;
+		}
 	}
 //	Broodwar->printf("failed building");
 	return 0;
@@ -766,6 +808,10 @@ void taskifyFighters()
 	int b0=0;
 	for(int i=0; i<NA; ++i) if (borderArea[i]) b0=i;
 
+	int bb=0;
+	for(int i=0; i<NA; ++i) bb+=borderArea[i];
+	Broodwar->printf("borderareas: %d", bb);
+
 	int c=0, cf=forceCount(c);
 	for(int i=0; i<sz(fighters); ++i) {
 		Unit* u = fighters[i];
@@ -957,7 +1003,7 @@ struct AttackA: Action {
 		double eav = enemyArmyValue(1000);
 		double av = armyValue();
 		value=-1;
-//		if (av/eav > 1.1) value=av/eav;
+		if (av/eav > 4) value=av/eav;
 #endif
 	}
 
@@ -971,7 +1017,7 @@ struct AttackA: Action {
 };
 struct MkForgeA: Action {
 	MkForgeA() {
-		value=1;
+		value=1.2;
 		if (comingCnt[FORGE]) value=-1;
 		if (!curCnt[PYLON]) value=-1;
 	}
@@ -981,7 +1027,7 @@ struct MkForgeA: Action {
 };
 struct MkCyberA: Action {
 	MkCyberA() {
-		value=1;
+		value=1.2;
 		if (comingCnt[CYBER] || !curCnt[FORGE] || !comingCnt[ASSIMILATOR]) value=-1;
 		if (!curCnt[PYLON]) value=-1;
 //		Broodwar->printf("cyber %f ; %d %d", value, comingCnt[CYBER], curCnt[FORGE]);
@@ -992,8 +1038,8 @@ struct MkCyberA: Action {
 };
 struct MkAssimA: Action {
 	MkAssimA() {
-		value=1;
-		if (!curCnt[GATEWAY] || !curCnt[FORGE] || comingCnt[ASSIMILATOR]) value=-1;
+		value=1.2;
+		if (!curCnt[GATEWAY] || !comingCnt[FORGE] || comingCnt[ASSIMILATOR]) value=-1;
 	}
 	void exec() {
 		makeBuilding<ASSIMILATOR>(value);
@@ -1004,6 +1050,7 @@ struct MkNexusA: Action {
 		const int P_PER_B = 15;
 		double rat = curCnt[PROBE] / (double)comingCnt[NEXUS];
 		value=rat - P_PER_B;
+		value *= .6;
 		// FIXME
 		//value=-1;
 	}
@@ -1164,7 +1211,7 @@ void Bot::onFrame()
 	Broodwar->printf("Number of known enemy units %d",Broodwar->enemy()->getUnits().size());
 	
 
-	if(sz(scouts) + sz(probes) == 7 && sz(scouts) == 0) {
+	if(sz(scouts) + sz(probes) == 9 && sz(scouts) == 0) {
 		//Scout s(probes.back(),bases[enemyStart]->getPosition());
 		bool attackUp = true;
 		if(bases[myStart]->getPosition().y() < Broodwar->mapHeight()/2*TILE_SIZE)
@@ -1441,6 +1488,7 @@ void Bot::onStart()
 	} else ownBaseDown = true;
 
 	makeGraph();
+	startMST();
 }
 
 void drawMap()

@@ -500,6 +500,7 @@ int BW_Battle::tick()
 
 
 		// Make sure we fight together (keeps "formation")
+#if 0
 		if(!engageOk(i, avg))
 		{
 			if(!noRetreat)
@@ -509,6 +510,7 @@ int BW_Battle::tick()
 				continue;
 			}
 		}
+#endif
 
 
 		// Check whether should make a tactical retreat on a single unit level

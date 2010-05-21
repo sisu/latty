@@ -48,11 +48,14 @@ void calcBorderArea()
 	memset(danger,0,sizeof(danger));
 	calcDangerFrom(enemyArea, myArea,1,1000);
 	for(int i=0; i<NA; ++i) {
+		borderArea[i] = myArea[i] && danger[i]>0;
+#if 0
 		if (!myArea[i]) continue;
 		for(int j=0; j<sz(conn[i]); ++j) if (danger[conn[i][j]]>0) {
 			borderArea[i]=1;
 			Broodwar->printf("borderArea: %d", i);
 		}
+#endif
 	}
 	calcDangerFrom(myArea, enemyArea,0,2000);
 }
@@ -107,24 +110,89 @@ void makeGraph()
 	}
 }
 
-#if 0
-void expand()
+struct MSTS {
+	TilePosition t;
+	int d;
+	int f;
+	bool operator<(const MSTS& s) const {
+		return d>s.d;
+	}
+};
+void startMST()
 {
-	if (!battles.empty()) return;
-	if (fighters.size()<2) return;
-	int to=0;
-	double bv=-1e9;
 	for(int i=0; i<NA; ++i) {
-		if (myArea[i]) continue;
-		if (danger[i]<=0) continue;
-		double v = -danger[i];
-		if (v>bv) bv=v, to=i;
+		TilePosition a = areas[i]->getCenter();
+		for(int j=0; j<sz(conn[i]); ++j) {
+			int t = conn[i][j];
+			TilePosition b = areas[t]->getCenter();
+			int z = 2*(int)a.getDistance(b);
+			for(int k=0; k<z; ++k) {
+				TilePosition c((k*a.x()+(z-k)*b.x())/z, (k*a.y()+(z-k)*b.y())/z);
+				for(int i=-1; i<2; ++i)
+					for(int j=-1; j<2; ++j)
+						forbidden[c.y()+i][c.x()+j]=1;
+			}
+		}
 	}
-	if (-bv < .1) {
-		Position p = areas[to]->getCenter();
-		Broodwar->printf("EXPANDING TO %d %d", p.x(),p.y());
-		Battle b(p);
-		battles.push_back(b);
+	return;
+#if 0
+
+
+	const int dx[]={0,1,0,-1};
+	const int dy[]={1,0,-1,0};
+	int w = Broodwar->mapWidth();
+	int h = Broodwar->mapHeight();
+
+	vector<char> done(w*h);
+	vector<int> from(w*h);
+	vector<char> end(w*h);
+	for(int i=0; i<NB; ++i) {
+		TilePosition t = bases[i]->getPosition();
+//		Broodwar->printf("asd %d %d", t.x(),t.y());
+		int a = w*t.y()+t.x();
+		if (a<0 || a>=sz(end)) continue;
+		end[w*t.y()+t.x()] = 1;
 	}
-}
+//	return;
+
+	priority_queue<MSTS> q;
+	TilePosition s0 = bases[0]->getPosition();
+//	s0.x()/=2, s0.y()/=2;
+	MSTS strt={s0,0,-1};
+	q.push(strt);
+	while(!q.empty()) {
+		MSTS m=q.top();q.pop();
+		TilePosition t=m.t;
+		int a0 = w*t.y()+t.x();
+		if (done[a0] || end[a0]) continue;
+		done[a0]=1;
+		from[a0]=m.f;
+
+		for(int i=0; i<4; ++i) {
+			TilePosition tt(t.x()+dx[i], t.y()+dy[i]);
+			int a=w*tt.y()+tt.x();
+			if (Broodwar->isWalkable(4*tt.x(),4*tt.y()) || done[a]) continue;
+			MSTS mm = {tt,m.d+1,a0};
+			q.push(mm);
+		}
+	}
+
+	for(int i=0; i<NA; ++i) {
+		TilePosition t = bases[i]->getPosition();
+		t.x()/=2, t.y()/=2;
+		int a = w*t.x()+t.y();
+		do {
+			int x=a%w, y=a/w;
+			for(int i=-1; i<2; ++i) {
+				for(int j=-1; j<2; ++j) {
+					int x2=2*x+i;
+					int y2=2*y+j;
+					if (x2>=0 && y2>=0 && x2<w && y2<h)
+						forbidden[y2][x2]=1;
+				}
+			}
+			a = from[a];
+		} while(a>=0);
+	}
 #endif
+}
