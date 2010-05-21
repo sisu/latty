@@ -277,7 +277,22 @@ struct Battle {
 		for(USCI i=es.begin(); i!=es.end(); ++i) {
 			battle.addUnit(*i);
 		}
-		if (edist()<1000) battle.tick();
+//		if (edist()<1000) battle.tick();
+		if (edist()<1000) {
+			for(int i=0; i<sz(battle.myUnits); ++i) {
+				Unit* u = battle.myUnits[i];
+				if (!u->isIdle()) continue;
+				double bd=1e50;
+				Unit* t=0;
+				for(USCI i=es.begin(); i!=es.end(); ++i) {
+					Unit* e = *i;
+					double d = u->getDistance(e);
+					if (e->getType()==Protoss_Probe) d -= 200;
+					if (d<bd) bd=d, t=e;
+				}
+				if (t) u->attackMove(t->getPosition());
+			}
+		}
 
 		if (!gathered) {
 			Position g = areas[gather]->getCenter();
@@ -877,6 +892,14 @@ void updateBattles()
 		if (tt>=0 && !inBattle(tt)) {
 			Battle b(u->getPosition());
 			battles.push_back(b);
+
+			if (tt==myStart && !curCnt[ZEALOT] && !curCnt[DRAGOON]) {
+				for(int i=0; i<sz(probes); ++i) {
+					Unit* p = probes[i];
+					if (p->isIdle() || p->isGatheringMinerals() || p->isGatheringGas())
+						p->attackMove(u->getPosition());
+				}
+			}
 		}
 	}
 }
