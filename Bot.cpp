@@ -277,7 +277,8 @@ struct Battle {
 		for(USCI i=es.begin(); i!=es.end(); ++i) {
 			battle.addUnit(*i);
 		}
-//		if (edist()<1000) battle.tick();
+		if (edist()<1000) battle.tick();
+#if 0
 		if (edist()<1000) {
 			for(int i=0; i<sz(battle.myUnits); ++i) {
 				Unit* u = battle.myUnits[i];
@@ -293,6 +294,7 @@ struct Battle {
 				if (t) u->attackMove(t->getPosition());
 			}
 		}
+#endif
 
 		if (!gathered) {
 			Position g = areas[gather]->getCenter();
@@ -1059,6 +1061,10 @@ struct AttackA: Action {
 		double av = armyValue();
 		value=-1;
 		if (av/eav > 4) value=av/eav;
+		if (!battles.empty()) value=-1;
+		if (frameCount > 24*30 && av<5) value=-1;
+		if (frameCount > 24*60 && av<15) value=-1;
+		if (frameCount > 24*120 && av<25) value=-1;
 #endif
 	}
 

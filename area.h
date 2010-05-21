@@ -1,12 +1,12 @@
 #include <queue>
 
-double danger[64];
-bool myArea[64], enemyArea[64];
+double danger[256];
+bool myArea[256], enemyArea[256];
 
 int owner[256];
-bool borderArea[64];
+bool borderArea[256];
 
-vector<int> conn[64];
+vector<int> conn[256];
 
 struct DangerS {
 	int a;
@@ -17,7 +17,7 @@ struct DangerS {
 };
 void calcDangerFrom(bool* start, bool* end, bool add, double ff)
 {
-	bool dused[64]={};
+	bool dused[256]={};
 	priority_queue<DangerS> q;
 	for(int i=0; i<NA; ++i) {
 		if (start[i]) {
