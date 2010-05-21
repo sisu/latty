@@ -18,11 +18,11 @@ struct Bot : BWAPI::AIModule
   virtual bool onSendText(std::string text);
   virtual void onPlayerLeft(BWAPI::Player* player);
   virtual void onNukeDetect(BWAPI::Position target);
-  virtual void onUnitCreate(BWAPI::Unit* unit);
   virtual void onUnitDestroy(BWAPI::Unit* unit);
   virtual void onUnitMorph(BWAPI::Unit* unit);
   virtual void onUnitShow(BWAPI::Unit* unit);
   virtual void onUnitHide(BWAPI::Unit* unit);
   virtual void onUnitRenegade(BWAPI::Unit* unit);
   */
+  virtual void onUnitCreate(BWAPI::Unit* unit);
 };

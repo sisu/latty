@@ -226,6 +226,7 @@ int NA; // areas
 int NB; // bases
 //bool done = false;
 int myStart, enemyStart;
+int centerArea, startNextArea;
 
 int myMnr; // non-allocated minerals
 map<Unit*,pair<int,UnitType> > startingBuild;
@@ -753,18 +754,17 @@ int forceCount(int area)
 void taskifyFighters()
 {
 	double s=0;
-	double s0=1e50;
 	for(int i=0; i<NA; ++i) {
 		if (!borderArea[i]) continue;
 		s += danger[i];
-		s0 = min(s0, danger[i]);
 	}
-	s0 += .01;
-	s += NA*s0;
 	if (!s) Broodwar->printf("no danger???"), s=.01;
 	else Broodwar->printf("danger: %f", s);
 	int tf=0;
 	for(int i=0; i<sz(fighters); ++i) tf+=uforce(fighters[i]->getType());
+
+	int b0=0;
+	for(int i=0; i<NA; ++i) if (borderArea[i]) b0=i;
 
 	int c=0, cf=forceCount(c);
 	for(int i=0; i<sz(fighters); ++i) {
@@ -772,10 +772,10 @@ void taskifyFighters()
 		if (!u->isIdle()) continue;
 		// FIXME: unnecessary moving around
 
-		while(c<NA && (!borderArea[c] || cf>tf*(s0+danger[c])/s)) {
+		while(c<NA && (!borderArea[c] || cf>tf*danger[c]/s)) {
 			++c;
 			if (c==NA) {
-				c=myStart;cf=forceCount(c);
+				c=b0;cf=forceCount(c);
 				break;
 			}
 			cf=forceCount(c);
@@ -957,7 +957,7 @@ struct AttackA: Action {
 		double eav = enemyArmyValue(1000);
 		double av = armyValue();
 		value=-1;
-		if (av/eav > 1.1) value=av/eav;
+//		if (av/eav > 1.1) value=av/eav;
 #endif
 	}
 
@@ -1061,8 +1061,14 @@ struct MkPhotonA: Action {
 };
 struct SupportPylonA: Action {
 	static double aval(int ar) {
-		if (!borderArea[ar]) return -1;
 		if (danger[ar]<=0) return -1;
+		if (!myArea[ar]) {
+			bool ok=0;
+			for(int i=0; i<sz(conn[ar]); ++i) {
+				if (myArea[conn[ar][i]]) ok=1;
+			}
+			if (!ok) return -1;
+		}
 		int a=curCnt[DRAGOON], b=curCnt[ZEALOT];
 		int c=0;
 		for(int i=0; i<sz(aunits[ar]); ++i) {
@@ -1329,6 +1335,7 @@ void Bot::onFrame()
 	++frameCount;
 }
 
+#if 0
 void expandArea(bool* arr, int a)
 {
 	const set<Chokepoint*>& cs = areas[a]->getChokepoints();
@@ -1339,11 +1346,47 @@ void expandArea(bool* arr, int a)
 		else arr[regNum[p.first]]=1;
 	}
 }
+#endif
+
+void calcStartAreas()
+{
+	BaseLocation* start = getStartLocation(Broodwar->self());
+	while(bases[myStart]!=start) ++myStart;
+	BaseLocation* estart = getStartLocation(Broodwar->enemy());
+	int w=Broodwar->mapWidth()*TILE_SIZE, h=Broodwar->mapHeight()*TILE_SIZE;
+	if (!estart) {
+		enemyStart=0;
+		Position appr(w/2,100);
+		if (bases[myStart]->getPosition().y() < h/2) appr.y()=h-100;
+		for(int i=0; i<NB; ++i) {
+			Position p = bases[i]->getPosition();
+			if (appr.getDistance(p) < appr.getDistance(bases[enemyStart]->getPosition()))
+				enemyStart=i;
+		}
+		Position p = bases[enemyStart]->getPosition();
+		Broodwar->printf("guessing enemy start base: %d %d", p.x(),p.y());
+	} else {
+		while(bases[enemyStart]!=estart) ++enemyStart;
+		Broodwar->printf("enemy start: %d %d", estart->getPosition().x(), estart->getPosition().y());
+	}
+
+	Position mid(w/2,h/2);
+	double bd=1e50;
+	for(int i=0; i<NB; ++i) {
+		Position p=areas[i]->getCenter();
+		double d = mid.getDistance(p);
+		if (d<bd) bd=d, centerArea=i;
+	}
+
+	Chokepoint* cp = *areas[myStart]->getChokepoints().begin();
+	pair<Region*,Region*> rr = cp->getRegions();
+	startNextArea = regNum[rr.first==areas[myStart] ? rr.second : rr.first];
+}
 
 void Bot::onStart()
 {
 	Broodwar->enableFlag(Flag::UserInput);
-	Broodwar->setLocalSpeed(25);
+	Broodwar->setLocalSpeed(0);
 	readMap();
 	analyze();
 
@@ -1366,25 +1409,7 @@ void Bot::onStart()
 	nexuses.resize(NA);
 	aminerals.resize(NA);
 
-	BaseLocation* start = getStartLocation(Broodwar->self());
-	while(bases[myStart]!=start) ++myStart;
-	BaseLocation* estart = getStartLocation(Broodwar->enemy());
-	if (!estart) {
-		enemyStart=0;
-		int w=Broodwar->mapWidth()*TILE_SIZE, h=Broodwar->mapHeight()*TILE_SIZE;
-		Position appr(w/2,100);
-		if (bases[myStart]->getPosition().y() < h/2) appr.y()=h-100;
-		for(int i=0; i<NB; ++i) {
-			Position p = bases[i]->getPosition();
-			if (appr.getDistance(p) < appr.getDistance(bases[enemyStart]->getPosition()))
-				enemyStart=i;
-		}
-		Position p = bases[enemyStart]->getPosition();
-		Broodwar->printf("guessing enemy start base: %d %d", p.x(),p.y());
-	} else {
-		while(bases[enemyStart]!=estart) ++enemyStart;
-		Broodwar->printf("enemy start: %d %d", estart->getPosition().x(), estart->getPosition().y());
-	}
+	calcStartAreas();
 	updateMineralList();
 	const USet& uns = Broodwar->self()->getUnits();
 	for(USCI it=uns.begin(); it!=uns.end(); ++it) {
@@ -1394,8 +1419,8 @@ void Bot::onStart()
 
 	myArea[myStart]=1;
 	enemyArea[enemyStart]=1;
-	expandArea(myArea,myStart);
-	expandArea(enemyArea,enemyStart);
+//	expandArea(myArea,myStart);
+//	expandArea(enemyArea,enemyStart);
 
 	owner[myStart]=1;
 	owner[enemyStart]=-1;
@@ -1471,4 +1496,11 @@ void drawMap()
         Broodwar->drawLine(CoordinateType::Map,point1.x(),point1.y(),point2.x(),point2.y(),Colors::Red);
       }
     }
+}
+
+void Bot::onUnitCreate(Unit* u)
+{
+	int a=0;
+	for(int i=0; i<NA; ++i) if (areas[i]->getPolygon().isInside(u->getPosition())) a=i;
+	if (u->getType()==Protoss_Nexus) addNexus(a,u);
 }

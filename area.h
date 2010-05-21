@@ -15,7 +15,7 @@ struct DangerS {
 		return d>s.d;
 	}
 };
-void calcDangerFrom(bool* start, bool* end, double f, double ff)
+void calcDangerFrom(bool* start, bool* end, bool add, double ff)
 {
 	bool dused[64]={};
 	priority_queue<DangerS> q;
@@ -30,7 +30,8 @@ void calcDangerFrom(bool* start, bool* end, double f, double ff)
 		q.pop();
 		if (dused[d.a]) continue;
 		dused[d.a]=1;
-		danger[d.a] += f/(1+d.d/ff);
+		if (add) danger[d.a] += 1/(1+d.d/ff);
+		else danger[d.a] /= 1/(1+d.d/ff);
 		if (end[d.a]) continue;
 
 		for(int i=0; i<sz(conn[d.a]); ++i) {
@@ -53,7 +54,7 @@ void calcBorderArea()
 			Broodwar->printf("borderArea: %d", i);
 		}
 	}
-	calcDangerFrom(myArea, enemyArea,-.8,2000);
+	calcDangerFrom(myArea, enemyArea,0,2000);
 }
 void calcAreas()
 {
@@ -67,6 +68,7 @@ void calcAreas()
 			if (u->getType()==Protoss_Zealot || u->getType()==Protoss_Dragoon)
 				++c;
 		}
+#if 0
 		// FIXME: slow?
 		int ec=0;
 		const set<Unit*>& es = Broodwar->enemy()->getUnits();
@@ -81,7 +83,9 @@ void calcAreas()
 
 		if (c>2*ec) myArea[i]=1;
 //		if (danger[i]<=0) myArea[i]=1;
+#endif
 	}
+	myArea[centerArea]=myArea[myStart]=myArea[startNextArea]=1;
 	enemyArea[enemyStart]=1;
 }
 void analyzeAreaState()
