@@ -234,7 +234,7 @@ int comingCnt[512];
 int comingSupply;
 int curCnt[512];
 
-bool forbidden[512][512];
+bool forbidden[1024][1024];
 
 map<Region*,int> regNum;
 //Chokepoint* borderLine;
@@ -612,8 +612,11 @@ void addNexus(int a, Unit* u)
 			int ix=int(x), iy=int(y);
 			const int d=3;
 //			Broodwar->printf("banning around %d %d", ix,iy);
-			for(int i=-d; i<=d; ++i) for(int j=-d; j<=d; ++j)
+			for(int i=-d; i<=d; ++i) for(int j=-d; j<=d; ++j) {
+				int y=iy+i, x=ix+j;
+				if (x<0 || y<0 || x>=Broodwar->mapWidth() || y>=Broodwar->mapHeight()) continue;
 				forbidden[iy+i][ix+j]=1;
+			}
 			x+=dx, y+=dy;
 		}
 	}
@@ -894,12 +897,22 @@ void updateBattles()
 		if (tt>=0 && !inBattle(tt)) {
 			Battle b(u->getPosition());
 			battles.push_back(b);
+			for(int i=0; i<sz(b.battle.myUnits); ++i) {
+				Unit* z = b.battle.myUnits[i];
+				z->attackMove(u->getPosition());
+			}
 
 			if (tt==myStart && !curCnt[ZEALOT] && !curCnt[DRAGOON]) {
+				double d=1e50;
 				for(int i=0; i<sz(probes); ++i) {
-					Unit* p = probes[i];
-					if (p->isIdle() || p->isGatheringMinerals() || p->isGatheringGas())
-						p->attackMove(u->getPosition());
+					d = min(d, probes[i]->getDistance(u));
+				}
+				if (d<30) {
+					for(int i=0; i<sz(probes); ++i) {
+						Unit* p = probes[i];
+						if (p->isIdle() || p->isGatheringMinerals() || p->isGatheringGas())
+							p->attackMove(u->getPosition());
+					}
 				}
 			}
 		}
@@ -916,7 +929,7 @@ bool cmpA(const Action* a, const Action* b)
 }
 struct MkProbeA: Action {
 	MkProbeA() {
-		value=60./(5+2*comingCnt[PROBE]);
+		value=60./(5+1.6*comingCnt[PROBE]);
 	}
 	void exec() {
 		makeProbe(value);
@@ -945,7 +958,7 @@ struct MkGatewayA: Action {
 			d += u->isTraining();
 		}
 		double r= cc ? (double)d/cc : 0;
-		value = (1-r)*40./(4+12*c);
+		value = (1-.5*r)*85./(7+11*c);
 		if (!curCnt[PYLON]) value=-1;
 	}
 	void exec() {
@@ -964,7 +977,7 @@ struct MkFighterA: Action {
 			else t0 = min(t0, u->getRemainingBuildTime());
 		}
 		double tt = (double)t0/UnitType(ZEALOT).buildTime();
-		value=30./(5+10*log(1.0+a+b)) * (1-tt);
+		value=50./(5+8*log(1.0+a+b)) * (1-tt);
 		if (!curCnt[GATEWAY]) value=-1;
 	}
 	void exec() {
@@ -1060,7 +1073,7 @@ struct AttackA: Action {
 		double eav = enemyArmyValue(1000);
 		double av = armyValue();
 		value=-1;
-		if (av/eav > 4) value=av/eav;
+		if (av/eav > 1.5) value=av/eav;
 		if (!battles.empty()) value=-1;
 		if (frameCount > 24*30 && av<5) value=-1;
 		if (frameCount > 24*60 && av<15) value=-1;
@@ -1196,7 +1209,7 @@ struct SupportPylonA: Action {
 		double r = (.5+pc)/(.01+c);
 		double value=(r-6)*20*log(1.+a+b)/(5+4*c);
 		if (!comingCnt[FORGE]) value=-1;
-		return value * (1-danger[ar]);
+		return value * (1-danger[ar]) + myArea[ar] - .8;
 	}
 	int dest;
 	SupportPylonA() {
@@ -1313,7 +1326,7 @@ void Bot::onFrame()
 	Broodwar->printf("Probecount: %d",(int)probes.size());
 
 
-	if(probes.size() > 10) {
+	if(probes.size() > 8) {
 		//Broodwar->printf("IN PROBLEMS");
 		if(!fieldScoutPatrolling) {
 			vector<TilePosition> vec;
@@ -1494,8 +1507,8 @@ void calcStartAreas()
 
 void Bot::onStart()
 {
-	Broodwar->enableFlag(Flag::UserInput);
-	Broodwar->setLocalSpeed(0);
+//	Broodwar->enableFlag(Flag::UserInput);
+	Broodwar->setLocalSpeed(1);
 	readMap();
 	analyze();
 

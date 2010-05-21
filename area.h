@@ -88,7 +88,8 @@ void calcAreas()
 //		if (danger[i]<=0) myArea[i]=1;
 #endif
 	}
-	myArea[centerArea]=myArea[myStart]=myArea[startNextArea]=1;
+	//myArea[centerArea]=
+		myArea[myStart]=myArea[startNextArea]=1;
 	enemyArea[enemyStart]=1;
 }
 void analyzeAreaState()
