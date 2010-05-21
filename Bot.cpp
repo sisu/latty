@@ -716,6 +716,8 @@ void taskifyFighters()
 		if (!borderArea[i]) continue;
 		s += danger[i];
 	}
+	if (!s) Broodwar->printf("no danger???"), s=.01;
+	else Broodwar->printf("danger: %f", s);
 	int tf=0;
 	for(int i=0; i<sz(fighters); ++i) tf+=uforce(fighters[i]->getType());
 
@@ -724,9 +726,18 @@ void taskifyFighters()
 		Unit* u = fighters[i];
 		if (!u->isIdle()) continue;
 
-		while(c<NA && (!borderArea[c] || cf>=tf*danger[c]/s)) ++c, cf=forceCount(c);
+		while(c<NA && (!borderArea[c] || cf>tf*danger[c]/s)) {
+			++c;
+			if (c==NA) {
+				c=myStart;cf=forceCount(c);
+				break;
+			}
+			cf=forceCount(c);
+		}
+
 		if (c==NA) c=myStart, cf=forceCount(0), s*=.5;
 		Position to = areas[c]->getCenter();
+		Broodwar->printf("sending to %d %d", to.x(), to.y());
 		if (u->getDistance(to)>100) u->attackMove(to);
 	}
 }
@@ -1276,7 +1287,7 @@ void expandArea(bool* arr, int a)
 void Bot::onStart()
 {
 	Broodwar->enableFlag(Flag::UserInput);
-	Broodwar->setLocalSpeed(30);
+	Broodwar->setLocalSpeed(25);
 	readMap();
 	analyze();
 

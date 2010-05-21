@@ -117,9 +117,12 @@ void calcBorderArea()
 	calcDangerFrom(enemyArea, myArea,1);
 	for(int i=0; i<NA; ++i) {
 		if (!myArea[i]) continue;
-		for(int j=0; j<sz(conn[i]); ++j) if (danger[conn[i][j]]>0) borderArea[i]=1;
+		for(int j=0; j<sz(conn[i]); ++j) if (danger[conn[i][j]]>0) {
+			borderArea[i]=1;
+			Broodwar->printf("borderArea: %d", i);
+		}
 	}
-	calcDangerFrom(myArea, enemyArea,-1);
+	calcDangerFrom(myArea, enemyArea,-.1);
 }
 void calcAreas()
 {
@@ -130,8 +133,9 @@ void calcAreas()
 			Unit* u = aunits[i][j];
 			if (u->getType().isBuilding()) myArea[i]=1;
 		}
-		enemyArea[enemyStart]=1;
+//		if (danger[i]<=0) myArea[i]=1;
 	}
+	enemyArea[enemyStart]=1;
 }
 void analyzeAreaState()
 {
