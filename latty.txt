@@ -1,0 +1,19 @@
+Ai For Games 2 -loppudokumentti
+===============================
+
+Ryhmä: Mika Laitinen (<insert opiskelijanumero here>)
+       Mikko Sysikaski (013573016)
+
+Tekoäly: lätty
+
+
+Ensimmäisen kisan tekoäly
+-------------------------
+
+Perusstrategia oli priorisoida aluksi vastustajan zealottien tappoa ja keskittää tulta (sillä se vaikutti parissa testipelin perusteella toimivalta lähtökohdalta). Botti myös koitti muodostaa aluksi jonkinlaisen taistelumuodostelman ja säilyttää sen edetessään.
+
+Botti ei ole juuri mitenkään strukturoitu, vaan lähes kaikki koodi on yhdessä funktiossa. Botti valitsi jokaiselle yksikölle jonkin vastustajan kohteeksi hyvyysfunktion mukaan. Hyvyysfunktion arvon määritti kohteen etäisyys ja HP:t sekä montako muuta omaa yksikköä hyökkää jo kohteen kimppuun.
+
+
+Toisen kisan tekoäly
+--------------------
